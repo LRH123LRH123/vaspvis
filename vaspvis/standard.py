@@ -851,13 +851,13 @@ def band_mixed_projections(
     tick_params_kwargs=None,
     tick_label_pad=None,
     spine_linewidth=None,
-    draw_horizontal_fermi=False,
+    draw_horizontal_fermi=True,
     horizontal_fermi_kwargs=None,
     draw_vertical_kgrid=False,
     vertical_kgrid_kwargs=None,
-    set_xlim_from_xticks=False,
+    set_xlim_from_xticks=True,
     xlim=None,
-    trim_xticks_to_xlim=False,
+    trim_xticks_to_xlim=True,
     ytick_step=None,
     ytick_fontsize=None,
     ytick_fontname=None,
@@ -1045,11 +1045,29 @@ def band_mixed_projections(
         xticks_new = [xticks_old[i] for i in keep_inds]
         xlabels_new = [xticklabels_old[i] for i in keep_inds]
 
+        def _select_boundary_label(label_text, keep="left"):
+            cleaned = label_text.replace("$|$", "|")
+            if "|" not in cleaned:
+                return label_text
+
+            parts = cleaned.split("|")
+            selected = parts[0] if keep == "left" else parts[-1]
+            selected = selected.strip().strip("$")
+
+            if selected == "":
+                return label_text
+
+            return f"${selected}$"
+
         if len(xlabels_new) > 0 and "|" in xlabels_new[-1]:
-            xlabels_new[-1] = xlabels_new[-1].split("|")[0]
+            xlabels_new[-1] = _select_boundary_label(
+                xlabels_new[-1], keep="left"
+            )
 
         if len(xlabels_new) > 0 and "|" in xlabels_new[0]:
-            xlabels_new[0] = xlabels_new[0].split("|")[-1]
+            xlabels_new[0] = _select_boundary_label(
+                xlabels_new[0], keep="right"
+            )
 
         ax.set_xticks(xticks_new)
         ax.set_xticklabels(xlabels_new)
