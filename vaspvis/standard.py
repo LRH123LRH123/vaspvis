@@ -849,12 +849,15 @@ def band_mixed_projections(
     xtick_fontname=None,
     xtick_rotation=0,
     tick_params_kwargs=None,
+    tick_label_pad=None,
     spine_linewidth=None,
     draw_horizontal_fermi=False,
     horizontal_fermi_kwargs=None,
     draw_vertical_kgrid=False,
     vertical_kgrid_kwargs=None,
     set_xlim_from_xticks=False,
+    xlim=None,
+    trim_xticks_to_xlim=False,
     ytick_step=None,
     ytick_fontsize=None,
     ytick_fontname=None,
@@ -996,6 +999,9 @@ def band_mixed_projections(
     if tick_params_kwargs is not None:
         ax.tick_params(**tick_params_kwargs)
 
+    if tick_label_pad is not None:
+        ax.tick_params(pad=tick_label_pad)
+
     if spine_linewidth is not None:
         for spine in ax.spines.values():
             spine.set_linewidth(spine_linewidth)
@@ -1020,10 +1026,26 @@ def band_mixed_projections(
         for xval in xticks[1:-1]:
             ax.axvline(x=xval, **vertical_kgrid_kwargs)
 
-    if set_xlim_from_xticks:
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    elif set_xlim_from_xticks:
         xticks = ax.get_xticks()
         if len(xticks) > 1:
             ax.set_xlim((xticks[0], xticks[-1]))
+
+    if trim_xticks_to_xlim:
+        xmin, xmax = ax.get_xlim()
+        xticks_old = ax.get_xticks()
+        xticklabels_old = [tick.get_text() for tick in ax.get_xticklabels()]
+
+        keep_inds = [
+            i for i, tick in enumerate(xticks_old)
+            if xmin - 1e-8 <= tick <= xmax + 1e-8
+        ]
+        xticks_new = [xticks_old[i] for i in keep_inds]
+        xlabels_new = [xticklabels_old[i] for i in keep_inds]
+        ax.set_xticks(xticks_new)
+        ax.set_xticklabels(xlabels_new)
 
     if ytick_step is not None:
         yticks = np.arange(erange[0], erange[1] + ytick_step, ytick_step)
