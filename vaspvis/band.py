@@ -1161,7 +1161,7 @@ class Band:
 
         return kdists
 
-    def _get_kticks(self, ax, wave_vectors, vlinecolor):
+    def _get_kticks(self, ax, wave_vectors, vlinecolor, linestyle="--", line_width=0.5):
         """
         This function extracts the kpoint labels and index locations for a regular
         band structure calculation (non unfolded).
@@ -1235,13 +1235,13 @@ class Band:
 
         for k in kpoints_index:
             ax.axvline(
-                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=0.5
+                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=line_width, linestyle=linestyle
             )
 
         ax.set_xticks([wave_vectors[k] for k in kpoints_index])
         ax.set_xticklabels(labels)
 
-    def _get_kticks_hse(self, wave_vectors, ax, kpath, vlinecolor):
+    def _get_kticks_hse(self, wave_vectors, ax, kpath, vlinecolor, linestyle="--", line_width=0.5):
         structure = self.poscar.structure
         kpath_obj = HighSymmKpath(structure)
         kpath_labels = np.array(list(kpath_obj._kpath["kpoints"].keys()))
@@ -1332,12 +1332,12 @@ class Band:
 
         for k in kpoints_index:
             ax.axvline(
-                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=0.5
+                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=line_width, linestyle=linestyle
             )
 
         ax.set_xticks([wave_vectors[k] for k in kpoints_index], kpath)
 
-    def _get_kticks_unfold(self, ax, wave_vectors, vlinecolor):
+    def _get_kticks_unfold(self, ax, wave_vectors, vlinecolor, linestyle="--", line_width=0.5):
         if self.custom_kpath is not None:
             kpath = []
             for i, b in zip(self.custom_kpath_inds, self.custom_kpath_flip):
@@ -1384,7 +1384,7 @@ class Band:
 
         for k in kpoints_index:
             ax.axvline(
-                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=0.5
+                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=line_width, linestyle=linestyle
             )
 
         ax.set_xticks(wave_vectors[kpoints_index])
@@ -1775,6 +1775,8 @@ class Band:
         band_index=None,
         sp_color="red",
         sp_scale_factor=5,
+        kline_style="--",
+        kline_width=0.5,
     ):
         """
         This function plots a plain band structure.
@@ -2057,18 +2059,24 @@ class Band:
                 wave_vectors=np.concatenate(self._get_k_distance()),
                 kpath=self.kpath,
                 vlinecolor=vlinecolor,
+                linestyle=kline_style,
+                line_width=kline_width,
             )
         elif self.unfold:
             self._get_kticks_unfold(
                 ax=ax,
                 wave_vectors=np.concatenate(self._get_k_distance()),
                 vlinecolor=vlinecolor,
+                linestyle=kline_style,
+                line_width=kline_width,
             )
         else:
             self._get_kticks(
                 ax=ax,
                 wave_vectors=np.concatenate(self._get_k_distance()),
                 vlinecolor=vlinecolor,
+                linestyle=kline_style,
+                line_width=kline_width,
             )
 
         ax.set_xlim(0, np.concatenate(self._get_k_distance()).max())
@@ -2091,6 +2099,8 @@ class Band:
         powernorm=False,
         gamma=0.5,
         plain_scale_factor=10,
+        kline_style="--",
+        kline_width=0.5,
     ):
         """
         This is a general method for plotting projected data
@@ -2130,6 +2140,8 @@ class Band:
             projection=projected_data,
             scale_factor=plain_scale_factor,
             sp_scale_factor=0,
+            kline_style=kline_style,
+            kline_width=kline_width,
         )
 
         wave_vector_segments = self._get_k_distance()
@@ -2284,6 +2296,8 @@ class Band:
         gamma=0.5,
         plain_scale_factor=10,
         scatter_mode="flattened",
+        kline_style="--",
+        kline_width=0.5,
     ):
         """
         This is a new projected-data plotting method that preserves the
@@ -3250,6 +3264,8 @@ class Band:
         powernorm=False,
         gamma=0.5,
         scatter_mode="layered",
+        kline_style="--",
+        kline_width=0.5,
     ):
         """
         This function plots generalized mixed projections.
@@ -3288,6 +3304,8 @@ class Band:
             cmap=cmap,
             vlinecolor=vlinecolor,
             scatter_mode=scatter_mode,
+            kline_style=kline_style,
+            kline_width=kline_width,
         )
 
         if legend:
