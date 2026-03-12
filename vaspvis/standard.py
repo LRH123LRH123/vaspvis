@@ -1057,7 +1057,10 @@ def band_mixed_projections(
             if selected == "":
                 return label_text
 
-            return f"${selected}$"
+            if selected in ["\\Gamma", "Gamma", "GAMMA", "G"]:
+                return r"$\Gamma$"
+
+            return selected
 
         if len(xlabels_new) > 0 and "|" in xlabels_new[-1]:
             xlabels_new[-1] = _select_boundary_label(
