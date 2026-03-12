@@ -1044,6 +1044,13 @@ def band_mixed_projections(
         ]
         xticks_new = [xticks_old[i] for i in keep_inds]
         xlabels_new = [xticklabels_old[i] for i in keep_inds]
+
+        if len(xlabels_new) > 0 and "|" in xlabels_new[-1]:
+            xlabels_new[-1] = xlabels_new[-1].split("|")[0]
+
+        if len(xlabels_new) > 0 and "|" in xlabels_new[0]:
+            xlabels_new[0] = xlabels_new[0].split("|")[-1]
+
         ax.set_xticks(xticks_new)
         ax.set_xticklabels(xlabels_new)
 
