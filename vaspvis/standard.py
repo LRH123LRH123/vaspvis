@@ -844,7 +844,7 @@ def band_mixed_projections(
     powernorm=True,
     gamma=0.5,
     scatter_mode="layered",
-    format_gamma_xticks=False,
+    format_gamma_xticks=True,
     xtick_fontsize=None,
     xtick_fontname=None,
     xtick_rotation=0,
