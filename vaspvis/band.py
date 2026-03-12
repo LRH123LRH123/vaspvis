@@ -880,6 +880,39 @@ class Band:
 
         raise TypeError("projection_spec must be dict or list of pairs")
 
+    def _format_orbital_selector_label(self, selector):
+        """Format orbital selector text for legend labels."""
+
+        if isinstance(selector, (int, np.integer)):
+            if selector not in self.orbital_labels:
+                raise ValueError(f"Unsupported orbital index for label: {selector}")
+            return self.orbital_labels[int(selector)]
+
+        if isinstance(selector, str):
+            token = selector.strip()
+            token_lower = token.lower()
+
+            if "|" in token:
+                return "|".join(
+                    [self._format_orbital_selector_label(part) for part in token.split("|")]
+                )
+
+            if token_lower in ["s", "p", "d", "f"]:
+                return token_lower
+
+            orbital_map = self._orbital_name_to_index()
+            if token_lower in orbital_map:
+                return self.orbital_labels[orbital_map[token_lower]]
+
+            return token
+
+        if isinstance(selector, (list, tuple, set)):
+            return "|".join(
+                [self._format_orbital_selector_label(item) for item in selector]
+            )
+
+        raise TypeError(f"Unsupported orbital selector type for label: {type(selector)}")
+
     def _sum_mixed_projections(self, projection_spec):
         """Generalized projection combiner for atom/orbital mixed selectors."""
 
@@ -898,7 +931,8 @@ class Band:
             one_piece = np.sum(atom_summed[:, :, orb_mask], axis=2)
 
             pieces.append(one_piece)
-            labels.append(f"{atom_sel}({orb_sel})")
+            orbital_label = self._format_orbital_selector_label(orb_sel)
+            labels.append(f"{atom_sel}({orbital_label})")
 
         projected_data = np.transpose(np.array(pieces), axes=(1, 2, 0))
 
