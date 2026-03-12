@@ -692,6 +692,218 @@ class Band:
 
         return spd_contributions
 
+    def _orbital_name_to_index(self):
+        """Map common orbital names/aliases to orbital indices."""
+
+        name_to_index = {
+            "s": 0,
+            "py": 1,
+            "p_y": 1,
+            "pz": 2,
+            "p_z": 2,
+            "px": 3,
+            "p_x": 3,
+            "dxy": 4,
+            "d_xy": 4,
+            "dyz": 5,
+            "d_yz": 5,
+            "dz2": 6,
+            "d_z2": 6,
+            "dz^2": 6,
+            "d_z^2": 6,
+            "dxz": 7,
+            "d_xz": 7,
+            "dx2-y2": 8,
+            "dx2y2": 8,
+            "d_x2-y2": 8,
+            "d_x2y2": 8,
+        }
+
+        if self.forbitals:
+            name_to_index.update(
+                {
+                    "fy3x2": 9,
+                    "fxyz": 10,
+                    "fyz2": 11,
+                    "fz3": 12,
+                    "fxz2": 13,
+                    "fzx3": 14,
+                    "fx3": 15,
+                }
+            )
+
+        return name_to_index
+
+    def _get_spd_masks(self):
+        """Return boolean masks for s/p/d/(f) orbital groups."""
+
+        if not self.forbitals:
+            masks = [np.zeros(9, dtype=bool) for _ in range(3)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+        else:
+            masks = [np.zeros(16, dtype=bool) for _ in range(4)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+            masks[3][9:16] = True
+
+        return {
+            "s": masks[0],
+            "p": masks[1],
+            "d": masks[2],
+            **({"f": masks[3]} if self.forbitals else {}),
+        }
+
+    def _parse_orbital_selector(self, selector):
+        """Convert one selector into a boolean orbital mask."""
+
+        norb = 16 if self.forbitals else 9
+        mask = np.zeros(norb, dtype=bool)
+
+        spd_masks = self._get_spd_masks()
+        name_to_index = self._orbital_name_to_index()
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= norb:
+                    raise ValueError(
+                        f"Orbital index {item} out of range 0..{norb - 1}"
+                    )
+                mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip().lower()
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                if token in spd_masks:
+                    mask[:] |= spd_masks[token]
+                    return
+
+                if token in name_to_index:
+                    mask[name_to_index[token]] = True
+                    return
+
+                raise ValueError(f"Unsupported orbital selector: {item}")
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(
+                f"Unsupported orbital selector type: {type(item)}"
+            )
+
+        add_one(selector)
+        return mask
+
+    def _parse_atom_selector(self, selector):
+        """Convert atom selector into a boolean atom mask."""
+
+        natom = self.projected_eigenvalues.shape[2]
+        atom_mask = np.zeros(natom, dtype=bool)
+
+        natoms = self.poscar.natoms
+        symbols = self.poscar.site_symbols
+        element_list = np.hstack(
+            [[symbols[i] for _ in range(natoms[i])] for i in range(len(symbols))]
+        )
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= natom:
+                    raise ValueError(
+                        f"Atom index {item} out of range 0..{natom - 1}"
+                    )
+                atom_mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip()
+
+                if token.lower() == "all":
+                    atom_mask[:] = True
+                    return
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                inds = np.where(element_list == token)[0]
+                if len(inds) == 0:
+                    raise ValueError(f"Element '{token}' not found in POSCAR")
+                atom_mask[inds] = True
+                return
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(f"Unsupported atom selector type: {type(item)}")
+
+        add_one(selector)
+        return atom_mask
+
+    def _normalize_mixed_projection_spec(self, projection_spec):
+        """Normalize user spec into a list of (atom_selector, orbital_selector)."""
+
+        normalized = []
+
+        if isinstance(projection_spec, dict):
+            for atom_sel, orb_sel in projection_spec.items():
+                if isinstance(orb_sel, (list, tuple, set)):
+                    for item in orb_sel:
+                        normalized.append((atom_sel, item))
+                else:
+                    normalized.append((atom_sel, orb_sel))
+            return normalized
+
+        if isinstance(projection_spec, (list, tuple)):
+            for item in projection_spec:
+                if not (
+                    isinstance(item, (list, tuple)) and len(item) == 2
+                ):
+                    raise ValueError(
+                        "List-style projection_spec must contain pairs like ('As', 'p')"
+                    )
+                normalized.append((item[0], item[1]))
+            return normalized
+
+        raise TypeError("projection_spec must be dict or list of pairs")
+
+    def _sum_mixed_projections(self, projection_spec):
+        """Generalized projection combiner for atom/orbital mixed selectors."""
+
+        spec_list = self._normalize_mixed_projection_spec(projection_spec)
+
+        pieces = []
+        labels = []
+
+        for atom_sel, orb_sel in spec_list:
+            atom_mask = self._parse_atom_selector(atom_sel)
+            orb_mask = self._parse_orbital_selector(orb_sel)
+
+            atom_summed = np.sum(
+                self.projected_eigenvalues[:, :, atom_mask, :], axis=2
+            )
+            one_piece = np.sum(atom_summed[:, :, orb_mask], axis=2)
+
+            pieces.append(one_piece)
+            labels.append(f"{atom_sel}({orb_sel})")
+
+        projected_data = np.transpose(np.array(pieces), axes=(1, 2, 0))
+
+        return projected_data, labels
+
     def _sum_orbitals(self, orbitals):
         """
         This function finds the weights of desired orbitals for all atoms and
@@ -2019,6 +2231,240 @@ class Band:
                     zorder=100,
                 )
 
+    def _plot_projected_general_new(
+        self,
+        ax,
+        projected_data,
+        colors,
+        scale_factor=5,
+        erange=[-6, 6],
+        display_order=None,
+        linewidth=0.75,
+        band_color="black",
+        heatmap=False,
+        bins=400,
+        sigma=3,
+        cmap="hot",
+        vlinecolor="black",
+        powernorm=False,
+        gamma=0.5,
+        plain_scale_factor=10,
+        scatter_mode="flattened",
+    ):
+        """
+        This is a new projected-data plotting method that preserves the
+        original behavior while adding a layered scatter mode.
+
+        Parameters:
+            scatter_mode (str): 'flattened' uses original one-pass flattening;
+                'layered' draws each projection channel in a loop so later
+                channels overlay earlier ones.
+        """
+        if self.unfold:
+            if band_color == "black":
+                band_color = "darkgrey"
+            scale_factor = scale_factor * 4
+
+        if scatter_mode not in ["flattened", "layered"]:
+            raise ValueError(
+                "scatter_mode must be either 'flattened' or 'layered'"
+            )
+
+        bands_in_plot = self._filter_bands(erange=erange)
+        slices = self._get_slices(unfold=self.unfold, hse=self.hse)
+
+        if self.unfold:
+            K_indices = np.array(self.K_indices[0], dtype=int)
+            projected_data = projected_data[:, K_indices, :]
+
+        self.plot_plain(
+            ax=ax,
+            linewidth=linewidth,
+            color=band_color,
+            erange=erange,
+            heatmap=heatmap,
+            sigma=sigma,
+            cmap=cmap,
+            bins=bins,
+            vlinecolor=vlinecolor,
+            projection=projected_data,
+            scale_factor=plain_scale_factor,
+            sp_scale_factor=0,
+        )
+
+        wave_vector_segments = self._get_k_distance()
+
+        if self.custom_kpath is not None:
+            kpath_inds = self.custom_kpath_inds
+            kpath_flip = self.custom_kpath_flip
+        else:
+            kpath_inds = range(len(slices))
+            kpath_flip = [False for _ in range(len(slices))]
+
+        for i, f, wave_vectors in zip(
+            kpath_inds, kpath_flip, wave_vector_segments
+        ):
+            projected_data_slice = projected_data[bands_in_plot, slices[i]]
+            if f:
+                eigenvalues = np.flip(
+                    self.eigenvalues[bands_in_plot, slices[i]], axis=1
+                )
+                projected_data_slice = np.flip(projected_data_slice, axis=1)
+            else:
+                eigenvalues = self.eigenvalues[bands_in_plot, slices[i]]
+
+            unique_colors = np.unique(colors)
+            shapes = (
+                projected_data_slice.shape[0],
+                projected_data_slice.shape[1],
+                projected_data_slice.shape[-1],
+            )
+            projected_data_slice = projected_data_slice.reshape(shapes)
+
+            if len(unique_colors) == len(colors):
+                plot_colors = colors
+            else:
+                unique_inds = [np.isin(colors, c) for c in unique_colors]
+                projected_data_slice = np.squeeze(projected_data_slice)
+                projected_data_slice = np.c_[
+                    [
+                        np.sum(projected_data_slice[..., u], axis=2)
+                        for u in unique_inds
+                    ]
+                ].transpose((1, 2, 0))
+                plot_colors = unique_colors
+
+            wave_vectors_old = wave_vectors
+
+            if self.interpolate:
+                (
+                    wave_vectors,
+                    eigenvalues,
+                ) = self._get_interpolated_data_segment(
+                    wave_vectors_old, eigenvalues
+                )
+                _, projected_data_slice = self._get_interpolated_data_segment(
+                    wave_vectors_old,
+                    projected_data_slice,
+                    crop_zero=True,
+                    kind="linear",
+                )
+
+            if not heatmap:
+                if self.unfold:
+                    spectral_weights = self.spectral_weights[
+                        bands_in_plot, slices[i]
+                    ]
+                    if f:
+                        spectral_weights = np.flip(spectral_weights, axis=1)
+
+                    if self.interpolate:
+                        (
+                            _,
+                            spectral_weights,
+                        ) = self._get_interpolated_data_segment(
+                            wave_vectors_old,
+                            spectral_weights,
+                            crop_zero=True,
+                            kind="linear",
+                        )
+
+                if scatter_mode == "flattened":
+                    if self.unfold:
+                        spectral_weights_ravel = np.repeat(
+                            np.ravel(spectral_weights),
+                            projected_data_slice.shape[-1],
+                        )
+
+                    projected_data_ravel = np.ravel(projected_data_slice)
+                    wave_vectors_tile = np.tile(
+                        np.repeat(wave_vectors, projected_data_slice.shape[-1]),
+                        projected_data_slice.shape[0],
+                    )
+                    eigenvalues_tile = np.repeat(
+                        np.ravel(eigenvalues), projected_data_slice.shape[-1]
+                    )
+                    colors_tile = np.tile(
+                        plot_colors, np.prod(projected_data_slice.shape[:-1])
+                    )
+
+                    if display_order is None:
+                        pass
+                    else:
+                        sort_index = np.argsort(projected_data_ravel)
+
+                        if display_order == "all":
+                            sort_index = sort_index[::-1]
+
+                        wave_vectors_tile = wave_vectors_tile[sort_index]
+                        eigenvalues_tile = eigenvalues_tile[sort_index]
+                        colors_tile = colors_tile[sort_index]
+                        projected_data_ravel = projected_data_ravel[sort_index]
+
+                        if self.unfold:
+                            spectral_weights_ravel = spectral_weights_ravel[
+                                sort_index
+                            ]
+
+                    if self.unfold:
+                        s = (
+                            scale_factor
+                            * projected_data_ravel
+                            * spectral_weights_ravel
+                        )
+                    else:
+                        s = scale_factor * projected_data_ravel
+
+                    ax.scatter(
+                        wave_vectors_tile,
+                        eigenvalues_tile,
+                        c=colors_tile,
+                        ec=[(1, 1, 1, 0)],
+                        s=s,
+                        zorder=100,
+                    )
+                else:
+                    wave_vectors_points = np.tile(
+                        wave_vectors, (projected_data_slice.shape[0], 1)
+                    )
+                    eigenvalues_points = np.array(eigenvalues)
+
+                    for projection_ind, projection_color in enumerate(plot_colors):
+                        projection_weights = projected_data_slice[
+                            :, :, projection_ind
+                        ]
+
+                        wave_vectors_tile = np.ravel(wave_vectors_points)
+                        eigenvalues_tile = np.ravel(eigenvalues_points)
+                        projection_weights_ravel = np.ravel(projection_weights)
+
+                        if self.unfold:
+                            s = (
+                                scale_factor
+                                * projection_weights_ravel
+                                * np.ravel(spectral_weights)
+                            )
+                        else:
+                            s = scale_factor * projection_weights_ravel
+
+                        if display_order is not None:
+                            sort_index = np.argsort(projection_weights_ravel)
+                            if display_order == "all":
+                                sort_index = sort_index[::-1]
+
+                            wave_vectors_tile = wave_vectors_tile[sort_index]
+                            eigenvalues_tile = eigenvalues_tile[sort_index]
+                            s = s[sort_index]
+
+                        ax.scatter(
+                            wave_vectors_tile,
+                            eigenvalues_tile,
+                            c=projection_color,
+                            ec=[(1, 1, 1, 0)],
+                            s=s,
+                            zorder=100,
+                        )
+
     def plot_plain_old(
         self,
         ax,
@@ -2749,6 +3195,69 @@ class Band:
                 ],
                 colors=colors,
             )
+
+
+    def plot_mixed_projections(
+        self,
+        ax,
+        projection_spec,
+        scale_factor=5,
+        erange=[-6, 6],
+        display_order=None,
+        color_list=None,
+        legend=True,
+        linewidth=0.75,
+        band_color="black",
+        heatmap=False,
+        bins=400,
+        sigma=3,
+        cmap="hot",
+        vlinecolor="black",
+        powernorm=False,
+        gamma=0.5,
+        scatter_mode="layered",
+    ):
+        """
+        This function plots generalized mixed projections.
+
+        Parameters:
+            ax (matplotlib.pyplot.axis): Axis to plot the data on.
+            projection_spec (dict / list / tuple): Mixed projection specification.
+        """
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+
+        if color_list is None:
+            colors = np.array(
+                [
+                    self.color_dict[i % len(self.color_dict)]
+                    for i in range(len(labels))
+                ]
+            )
+        else:
+            colors = color_list
+
+        self._plot_projected_general_new(
+            ax=ax,
+            projected_data=projected_data,
+            colors=colors,
+            scale_factor=scale_factor,
+            erange=erange,
+            display_order=display_order,
+            linewidth=linewidth,
+            band_color=band_color,
+            heatmap=heatmap,
+            bins=bins,
+            sigma=sigma,
+            cmap=cmap,
+            vlinecolor=vlinecolor,
+            scatter_mode=scatter_mode,
+        )
+
+        if legend:
+            self._add_legend(ax=ax, names=labels, colors=colors)
 
     def plot_elements(
         self,
