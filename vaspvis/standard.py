@@ -844,6 +844,21 @@ def band_mixed_projections(
     powernorm=True,
     gamma=0.5,
     scatter_mode="layered",
+    format_gamma_xticks=False,
+    xtick_fontsize=None,
+    xtick_fontname=None,
+    xtick_rotation=0,
+    tick_params_kwargs=None,
+    spine_linewidth=None,
+    draw_horizontal_fermi=False,
+    horizontal_fermi_kwargs=None,
+    draw_vertical_kgrid=False,
+    vertical_kgrid_kwargs=None,
+    set_xlim_from_xticks=False,
+    ytick_step=None,
+    ytick_fontsize=None,
+    ytick_fontname=None,
+    box_aspect=None,
     save=True,
     shift_efermi=0,
     interpolate=False,
@@ -951,6 +966,83 @@ def band_mixed_projections(
         cbar = fig.colorbar(im, cax=cax, orientation=cbar_orientation)
         cbar.set_ticks([min_val, max_val])
         cbar.set_ticklabels(["min", "max"])
+
+
+    if format_gamma_xticks:
+        xticks = ax.get_xticks()
+        xticklabels = [tick.get_text() for tick in ax.get_xticklabels()]
+
+        formatted_labels = []
+        for label in xticklabels:
+            label_clean = label.replace("$", "")
+            if label_clean.upper() in ["G", "GAMMA"]:
+                formatted_labels.append(r"$\Gamma$")
+            else:
+                formatted_labels.append(label_clean)
+
+        xtick_kwargs = {}
+        if xtick_fontsize is not None:
+            xtick_kwargs["fontsize"] = xtick_fontsize
+        if xtick_fontname is not None:
+            xtick_kwargs["fontname"] = xtick_fontname
+
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(
+            formatted_labels,
+            rotation=xtick_rotation,
+            **xtick_kwargs,
+        )
+
+    if tick_params_kwargs is not None:
+        ax.tick_params(**tick_params_kwargs)
+
+    if spine_linewidth is not None:
+        for spine in ax.spines.values():
+            spine.set_linewidth(spine_linewidth)
+
+    if draw_horizontal_fermi:
+        if horizontal_fermi_kwargs is None:
+            horizontal_fermi_kwargs = {
+                "linestyle": "--",
+                "linewidth": 2,
+                "color": "0.5",
+            }
+        ax.axhline(y=0, **horizontal_fermi_kwargs)
+
+    if draw_vertical_kgrid:
+        if vertical_kgrid_kwargs is None:
+            vertical_kgrid_kwargs = {
+                "linestyle": "--",
+                "linewidth": 2,
+                "color": "0.5",
+            }
+        xticks = ax.get_xticks()
+        for xval in xticks[1:-1]:
+            ax.axvline(x=xval, **vertical_kgrid_kwargs)
+
+    if set_xlim_from_xticks:
+        xticks = ax.get_xticks()
+        if len(xticks) > 1:
+            ax.set_xlim((xticks[0], xticks[-1]))
+
+    if ytick_step is not None:
+        yticks = np.arange(erange[0], erange[1] + ytick_step, ytick_step)
+        ytick_labels = [
+            str(int(yval)) if float(yval).is_integer() else f"{yval:g}"
+            for yval in yticks
+        ]
+
+        ytick_kwargs = {}
+        if ytick_fontsize is not None:
+            ytick_kwargs["fontsize"] = ytick_fontsize
+        if ytick_fontname is not None:
+            ytick_kwargs["fontname"] = ytick_fontname
+
+        ax.set_yticks(yticks)
+        ax.set_yticklabels(ytick_labels, **ytick_kwargs)
+
+    if box_aspect is not None:
+        ax.set_box_aspect(box_aspect)
 
     if heatmap:
         if not cbar:
