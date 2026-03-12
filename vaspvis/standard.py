@@ -812,6 +812,155 @@ def band_orbitals(
         return fig, ax
 
 
+
+def band_mixed_projections(
+    folder,
+    projection_spec,
+    output="band_mixed_projections.png",
+    spin="up",
+    scale_factor=5,
+    display_order=None,
+    color_list=None,
+    legend=True,
+    linewidth=0.75,
+    band_color="black",
+    figsize=(4, 3),
+    erange=[-6, 6],
+    kpath=None,
+    custom_kpath=None,
+    stretch_factor=1.0,
+    n=None,
+    unfold=False,
+    M=None,
+    high_symm_points=None,
+    fontsize=12,
+    heatmap=False,
+    bins=800,
+    sigma=2,
+    cmap="hot",
+    vlinecolor="black",
+    cbar=True,
+    cbar_orientation="horizontal",
+    powernorm=True,
+    gamma=0.5,
+    save=True,
+    shift_efermi=0,
+    interpolate=False,
+    new_n=200,
+    soc_axis=None,
+):
+    """
+    This function generates a projected band structure with mixed atom and
+    orbital selectors.
+
+    projection_spec examples:
+
+    dict style:
+        {
+            "As": ["p"],
+            "In": [3, "pz"],
+            "As|In": ["d"],
+            "all": ["px|py", "d"],
+        }
+
+    list style:
+        [
+            ("As", "p"),
+            ("In", 3),
+            ("In", "pz"),
+            ("As|In", "d"),
+            ("all", "px|py"),
+            ("all", "d"),
+        ]
+    """
+
+    band = Band(
+        folder=folder,
+        spin=spin,
+        projected=True,
+        unfold=unfold,
+        high_symm_points=high_symm_points,
+        interpolate=interpolate,
+        new_n=new_n,
+        soc_axis=soc_axis,
+        kpath=kpath,
+        custom_kpath=custom_kpath,
+        stretch_factor=stretch_factor,
+        n=n,
+        M=M,
+        shift_efermi=shift_efermi,
+    )
+
+    if heatmap:
+        legend = False
+        if cbar:
+            if cbar_orientation == "horizontal":
+                fig, (ax, cax) = plt.subplots(
+                    nrows=2,
+                    figsize=figsize,
+                    gridspec_kw={"height_ratios": [1, 0.05]},
+                    dpi=400,
+                    constrained_layout=True,
+                )
+            elif cbar_orientation == "vertical":
+                fig, (ax, cax) = plt.subplots(
+                    ncols=2,
+                    figsize=figsize,
+                    gridspec_kw={"width_ratios": [1, 0.05]},
+                    dpi=400,
+                    constrained_layout=True,
+                )
+            else:
+                raise ValueError(
+                    "cbar_orientation must be 'horizontal' or 'vertical'"
+                )
+        else:
+            fig = plt.figure(figsize=figsize, dpi=400)
+            ax = fig.add_subplot(111)
+    else:
+        fig = plt.figure(figsize=figsize, dpi=400)
+        ax = fig.add_subplot(111)
+
+    _figure_setup(ax=ax, fontsize=fontsize, ylim=[erange[0], erange[1]])
+
+    band.plot_mixed_projections(
+        ax=ax,
+        projection_spec=projection_spec,
+        scale_factor=scale_factor,
+        erange=erange,
+        display_order=display_order,
+        color_list=color_list,
+        legend=legend,
+        linewidth=linewidth,
+        band_color=band_color,
+        heatmap=heatmap,
+        bins=bins,
+        sigma=sigma,
+        cmap=cmap,
+        vlinecolor=vlinecolor,
+        powernorm=powernorm,
+        gamma=gamma,
+    )
+
+    if heatmap and cbar:
+        im = ax.collections[0]
+        min_val = im.norm.vmin
+        max_val = im.norm.vmax
+        cbar = fig.colorbar(im, cax=cax, orientation=cbar_orientation)
+        cbar.set_ticks([min_val, max_val])
+        cbar.set_ticklabels(["min", "max"])
+
+    if heatmap:
+        if not cbar:
+            fig.tight_layout(pad=0.4)
+    else:
+        fig.tight_layout(pad=0.4)
+
+    if save:
+        plt.savefig(output)
+    else:
+        return fig, ax
+
 def band_atoms(
     folder,
     atoms,

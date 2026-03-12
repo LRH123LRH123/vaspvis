@@ -692,6 +692,218 @@ class Band:
 
         return spd_contributions
 
+    def _orbital_name_to_index(self):
+        """Map common orbital names/aliases to orbital indices."""
+
+        name_to_index = {
+            "s": 0,
+            "py": 1,
+            "p_y": 1,
+            "pz": 2,
+            "p_z": 2,
+            "px": 3,
+            "p_x": 3,
+            "dxy": 4,
+            "d_xy": 4,
+            "dyz": 5,
+            "d_yz": 5,
+            "dz2": 6,
+            "d_z2": 6,
+            "dz^2": 6,
+            "d_z^2": 6,
+            "dxz": 7,
+            "d_xz": 7,
+            "dx2-y2": 8,
+            "dx2y2": 8,
+            "d_x2-y2": 8,
+            "d_x2y2": 8,
+        }
+
+        if self.forbitals:
+            name_to_index.update(
+                {
+                    "fy3x2": 9,
+                    "fxyz": 10,
+                    "fyz2": 11,
+                    "fz3": 12,
+                    "fxz2": 13,
+                    "fzx3": 14,
+                    "fx3": 15,
+                }
+            )
+
+        return name_to_index
+
+    def _get_spd_masks(self):
+        """Return boolean masks for s/p/d/(f) orbital groups."""
+
+        if not self.forbitals:
+            masks = [np.zeros(9, dtype=bool) for _ in range(3)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+        else:
+            masks = [np.zeros(16, dtype=bool) for _ in range(4)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+            masks[3][9:16] = True
+
+        return {
+            "s": masks[0],
+            "p": masks[1],
+            "d": masks[2],
+            **({"f": masks[3]} if self.forbitals else {}),
+        }
+
+    def _parse_orbital_selector(self, selector):
+        """Convert one selector into a boolean orbital mask."""
+
+        norb = 16 if self.forbitals else 9
+        mask = np.zeros(norb, dtype=bool)
+
+        spd_masks = self._get_spd_masks()
+        name_to_index = self._orbital_name_to_index()
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= norb:
+                    raise ValueError(
+                        f"Orbital index {item} out of range 0..{norb - 1}"
+                    )
+                mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip().lower()
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                if token in spd_masks:
+                    mask[:] |= spd_masks[token]
+                    return
+
+                if token in name_to_index:
+                    mask[name_to_index[token]] = True
+                    return
+
+                raise ValueError(f"Unsupported orbital selector: {item}")
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(
+                f"Unsupported orbital selector type: {type(item)}"
+            )
+
+        add_one(selector)
+        return mask
+
+    def _parse_atom_selector(self, selector):
+        """Convert atom selector into a boolean atom mask."""
+
+        natom = self.projected_eigenvalues.shape[2]
+        atom_mask = np.zeros(natom, dtype=bool)
+
+        natoms = self.poscar.natoms
+        symbols = self.poscar.site_symbols
+        element_list = np.hstack(
+            [[symbols[i] for _ in range(natoms[i])] for i in range(len(symbols))]
+        )
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= natom:
+                    raise ValueError(
+                        f"Atom index {item} out of range 0..{natom - 1}"
+                    )
+                atom_mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip()
+
+                if token.lower() == "all":
+                    atom_mask[:] = True
+                    return
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                inds = np.where(element_list == token)[0]
+                if len(inds) == 0:
+                    raise ValueError(f"Element '{token}' not found in POSCAR")
+                atom_mask[inds] = True
+                return
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(f"Unsupported atom selector type: {type(item)}")
+
+        add_one(selector)
+        return atom_mask
+
+    def _normalize_mixed_projection_spec(self, projection_spec):
+        """Normalize user spec into a list of (atom_selector, orbital_selector)."""
+
+        normalized = []
+
+        if isinstance(projection_spec, dict):
+            for atom_sel, orb_sel in projection_spec.items():
+                if isinstance(orb_sel, (list, tuple, set)):
+                    for item in orb_sel:
+                        normalized.append((atom_sel, item))
+                else:
+                    normalized.append((atom_sel, orb_sel))
+            return normalized
+
+        if isinstance(projection_spec, (list, tuple)):
+            for item in projection_spec:
+                if not (
+                    isinstance(item, (list, tuple)) and len(item) == 2
+                ):
+                    raise ValueError(
+                        "List-style projection_spec must contain pairs like ('As', 'p')"
+                    )
+                normalized.append((item[0], item[1]))
+            return normalized
+
+        raise TypeError("projection_spec must be dict or list of pairs")
+
+    def _sum_mixed_projections(self, projection_spec):
+        """Generalized projection combiner for atom/orbital mixed selectors."""
+
+        spec_list = self._normalize_mixed_projection_spec(projection_spec)
+
+        pieces = []
+        labels = []
+
+        for atom_sel, orb_sel in spec_list:
+            atom_mask = self._parse_atom_selector(atom_sel)
+            orb_mask = self._parse_orbital_selector(orb_sel)
+
+            atom_summed = np.sum(
+                self.projected_eigenvalues[:, :, atom_mask, :], axis=2
+            )
+            one_piece = np.sum(atom_summed[:, :, orb_mask], axis=2)
+
+            pieces.append(one_piece)
+            labels.append(f"{atom_sel}({orb_sel})")
+
+        projected_data = np.transpose(np.array(pieces), axes=(1, 2, 0))
+
+        return projected_data, labels
+
     def _sum_orbitals(self, orbitals):
         """
         This function finds the weights of desired orbitals for all atoms and
@@ -2749,6 +2961,67 @@ class Band:
                 ],
                 colors=colors,
             )
+
+
+    def plot_mixed_projections(
+        self,
+        ax,
+        projection_spec,
+        scale_factor=5,
+        erange=[-6, 6],
+        display_order=None,
+        color_list=None,
+        legend=True,
+        linewidth=0.75,
+        band_color="black",
+        heatmap=False,
+        bins=400,
+        sigma=3,
+        cmap="hot",
+        vlinecolor="black",
+        powernorm=False,
+        gamma=0.5,
+    ):
+        """
+        This function plots generalized mixed projections.
+
+        Parameters:
+            ax (matplotlib.pyplot.axis): Axis to plot the data on.
+            projection_spec (dict / list / tuple): Mixed projection specification.
+        """
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+
+        if color_list is None:
+            colors = np.array(
+                [
+                    self.color_dict[i % len(self.color_dict)]
+                    for i in range(len(labels))
+                ]
+            )
+        else:
+            colors = color_list
+
+        self._plot_projected_general(
+            ax=ax,
+            projected_data=projected_data,
+            colors=colors,
+            scale_factor=scale_factor,
+            erange=erange,
+            display_order=display_order,
+            linewidth=linewidth,
+            band_color=band_color,
+            heatmap=heatmap,
+            bins=bins,
+            sigma=sigma,
+            cmap=cmap,
+            vlinecolor=vlinecolor,
+        )
+
+        if legend:
+            self._add_legend(ax=ax, names=labels, colors=colors)
 
     def plot_elements(
         self,
