@@ -4321,6 +4321,9 @@ def dos_mixed_projections(
     yticks=None,
     xtick_step=None,
     ytick_step=None,
+    tick_length=2.5,
+    tick_width=0.8,
+    spine_width=0.8,
 ):
     """
     Plot mixed DOS projections with generalized atom/orbital selectors.
@@ -4331,6 +4334,8 @@ def dos_mixed_projections(
         - ``tick_direction`` defaults to ``"in"``.
         - You can set explicit ticks via ``xticks`` / ``yticks`` or by spacing via
           ``xtick_step`` / ``ytick_step``.
+        - Tick style can be controlled by ``tick_length`` and ``tick_width``.
+        - Frame style can be controlled by ``spine_width``.
         - Use ``shift_efermi`` to rigidly shift the reference Fermi level.
 
     ``projection_spec`` examples:
@@ -4364,7 +4369,14 @@ def dos_mixed_projections(
         erange=erange,
     )
 
-    ax.tick_params(direction=tick_direction)
+    ax.tick_params(
+        direction=tick_direction,
+        length=tick_length,
+        width=tick_width,
+    )
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(spine_width)
 
     if xticks is not None:
         ax.set_xticks(xticks)
