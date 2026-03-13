@@ -22,7 +22,7 @@ def _figure_setup(ax, fontsize=6, ylim=[-6, 6]):
 
 
 def _figure_setup_dos(ax, fontsize=6, energyaxis="y", log_scale=False):
-    ax.tick_params(labelsize=fontsize, length=2.5)
+    ax.tick_params(labelsize=fontsize, length=2.5, direction="in")
     if energyaxis == "y":
         ax.set_ylabel("$E - E_{F}$ $(eV)$", fontsize=fontsize)
         if log_scale:
@@ -4316,6 +4316,11 @@ def dos_mixed_projections(
     data_precision=5,
     energy_data_precision=5,
     compact_data_labels=True,
+    tick_direction="in",
+    xticks=None,
+    yticks=None,
+    xtick_step=None,
+    ytick_step=None,
 ):
     """
     Plot mixed DOS projections with generalized atom/orbital selectors.
@@ -4323,6 +4328,9 @@ def dos_mixed_projections(
     Notes:
         - ``energyaxis`` defaults to ``"y"`` (Energy on y-axis).
         - ``fill`` defaults to ``False`` (line-only curves without area fill).
+        - ``tick_direction`` defaults to ``"in"``.
+        - You can set explicit ticks via ``xticks`` / ``yticks`` or by spacing via
+          ``xtick_step`` / ``ytick_step``.
         - Use ``shift_efermi`` to rigidly shift the reference Fermi level.
 
     ``projection_spec`` examples:
@@ -4355,6 +4363,20 @@ def dos_mixed_projections(
         total=total,
         erange=erange,
     )
+
+    ax.tick_params(direction=tick_direction)
+
+    if xticks is not None:
+        ax.set_xticks(xticks)
+    elif xtick_step is not None:
+        xlim = ax.get_xlim()
+        ax.set_xticks(np.arange(xlim[0], xlim[1] + xtick_step, xtick_step))
+
+    if yticks is not None:
+        ax.set_yticks(yticks)
+    elif ytick_step is not None:
+        ylim = ax.get_ylim()
+        ax.set_yticks(np.arange(ylim[0], ylim[1] + ytick_step, ytick_step))
 
     plt.tight_layout(pad=0.4)
 
