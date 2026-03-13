@@ -759,8 +759,18 @@ class Dos:
                     return
 
                 inds = np.where(element_list == token)[0]
+
+                # Allow case-insensitive element selectors, e.g. "in" -> "In"
                 if len(inds) == 0:
-                    raise ValueError(f"Element '{token}' not found in POSCAR")
+                    token_norm = token.capitalize()
+                    inds = np.where(element_list == token_norm)[0]
+
+                if len(inds) == 0:
+                    available_elements = sorted(set(element_list.tolist()))
+                    raise ValueError(
+                        f"Element '{token}' not found in POSCAR. "
+                        f"Available elements: {', '.join(available_elements)}"
+                    )
                 atom_mask[inds] = True
                 return
 
