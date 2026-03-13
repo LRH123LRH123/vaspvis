@@ -865,6 +865,7 @@ def band_mixed_projections(
     xlim=None,
     trim_xticks_to_xlim=True,
     ytick_step=None,
+    ytick_decimals=None,
     ytick_fontsize=None,
     ytick_fontname=None,
     box_aspect=None,
@@ -1091,10 +1092,18 @@ def band_mixed_projections(
 
     if ytick_step is not None:
         yticks = np.arange(erange[0], erange[1] + ytick_step, ytick_step)
-        ytick_labels = [
-            str(int(yval)) if float(yval).is_integer() else f"{yval:g}"
-            for yval in yticks
-        ]
+
+        if ytick_decimals is None:
+            ytick_labels = [
+                str(int(yval)) if float(yval).is_integer() else f"{yval:g}"
+                for yval in yticks
+            ]
+        else:
+            if ytick_decimals < 0:
+                raise ValueError("ytick_decimals must be >= 0")
+            ytick_labels = [
+                f"{yval:.{ytick_decimals}f}" for yval in yticks
+            ]
 
         ytick_kwargs = {}
         if ytick_fontsize is not None:
