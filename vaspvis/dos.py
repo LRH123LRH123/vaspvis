@@ -2066,7 +2066,7 @@ class Dos:
         self,
         ax,
         projection_spec,
-        fill=True,
+        fill=False,
         alpha=0.3,
         alpha_line=1.0,
         linewidth=1.5,

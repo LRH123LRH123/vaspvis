@@ -4294,7 +4294,7 @@ def dos_mixed_projections(
     folder,
     projection_spec,
     output="dos_mixed_projections.png",
-    fill=True,
+    fill=False,
     alpha=0.3,
     linewidth=1.5,
     sigma=0.05,
@@ -4322,6 +4322,7 @@ def dos_mixed_projections(
 
     Notes:
         - ``energyaxis`` defaults to ``"y"`` (Energy on y-axis).
+        - ``fill`` defaults to ``False`` (line-only curves without area fill).
         - Use ``shift_efermi`` to rigidly shift the reference Fermi level.
 
     ``projection_spec`` examples:
