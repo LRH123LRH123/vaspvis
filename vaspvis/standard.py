@@ -4288,6 +4288,81 @@ def dos_spd(
         return fig, ax
 
 
+def dos_mixed_projections(
+    folder,
+    projection_spec,
+    output="dos_mixed_projections.png",
+    fill=True,
+    alpha=0.3,
+    linewidth=1.5,
+    sigma=0.05,
+    energyaxis="y",
+    color_list=None,
+    legend=True,
+    total=True,
+    figsize=(4, 3),
+    erange=[-6, 6],
+    spin="up",
+    soc_axis=None,
+    combination_method="add",
+    fontsize=12,
+    save=True,
+    shift_efermi=0,
+    export_data=False,
+    data_output="PDOS_mixed.dat",
+    include_tot=True,
+    data_precision=6,
+):
+    """
+    Plot mixed DOS projections with generalized atom/orbital selectors.
+
+    projection_spec examples:
+        {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"]}
+        [("As", "p"), ("In", 3), ("In", "pz"), ("As|In", "d"), ("all", "px|py")]
+    """
+
+    dos = Dos(
+        shift_efermi=shift_efermi,
+        folder=folder,
+        spin=spin,
+        soc_axis=soc_axis,
+        combination_method=combination_method,
+    )
+
+    fig = plt.figure(figsize=figsize, dpi=400)
+    ax = fig.add_subplot(111)
+    _figure_setup_dos(ax=ax, fontsize=fontsize, energyaxis=energyaxis)
+
+    dos.plot_mixed_projections(
+        ax=ax,
+        projection_spec=projection_spec,
+        fill=fill,
+        alpha=alpha,
+        linewidth=linewidth,
+        sigma=sigma,
+        energyaxis=energyaxis,
+        color_list=color_list,
+        legend=legend,
+        total=total,
+        erange=erange,
+    )
+
+    plt.tight_layout(pad=0.4)
+
+    if export_data:
+        dos.export_mixed_projections_data(
+            projection_spec=projection_spec,
+            output=data_output,
+            include_tot=include_tot,
+            precision=data_precision,
+        )
+
+    if save:
+        plt.savefig(output)
+    else:
+        return fig, ax
+
+
 def dos_atom_orbitals(
     folder,
     atom_orbital_dict,
