@@ -114,7 +114,25 @@ class Dos:
             check_for_POTCAR=False,
             read_velocities=False,
         )
-        self.forbitals = self._check_f_orb()
+
+        if "LSORBIT" in self.incar:
+            if self.incar["LSORBIT"]:
+                self.lsorbit = True
+            else:
+                self.lsorbit = False
+        else:
+            self.lsorbit = False
+
+        if "ISPIN" in self.incar:
+            if self.incar["ISPIN"] == 2:
+                self.ispin = True
+            else:
+                self.ispin = False
+        else:
+            self.ispin = False
+
+        self.spin_dict = {"up": Spin.up, "down": Spin.down}
+        self.forbitals = self._infer_forbitals_from_projected()
         self.color_dict = {
             0: "#FF0000",
             1: "#0000FF",
@@ -158,23 +176,6 @@ class Dos:
             "f": 3,
         }
 
-        if "LSORBIT" in self.incar:
-            if self.incar["LSORBIT"]:
-                self.lsorbit = True
-            else:
-                self.lsorbit = False
-        else:
-            self.lsorbit = False
-
-        if "ISPIN" in self.incar:
-            if self.incar["ISPIN"] == 2:
-                self.ispin = True
-            else:
-                self.ispin = False
-        else:
-            self.ispin = False
-
-        self.spin_dict = {"up": Spin.up, "down": Spin.down}
 
         self.tdos_array = self._load_tdos()
 
@@ -305,6 +306,30 @@ class Dos:
 
         with open(os.path.join(self.folder, "DOSCAR"), "w") as x:
             x.write(new_doscar)
+
+    def _infer_forbitals_from_projected(self):
+        """Infer whether DOSCAR contains f-orbital channels from projected DOS columns."""
+
+        if not self.lorbit or "projected" not in self.doscar:
+            return self._check_f_orb()
+
+        projected_ncols = int(self.doscar["projected"].shape[-1])
+
+        if self.lsorbit:
+            factor = 4
+        elif self.ispin:
+            factor = 2
+        else:
+            factor = 1
+
+        n_orb = (projected_ncols - 1) / factor
+
+        if np.isclose(n_orb, 16):
+            return True
+        if np.isclose(n_orb, 9):
+            return False
+
+        return self._check_f_orb()
 
     def _load_tdos(self):
         """
@@ -676,6 +701,10 @@ class Dos:
 
                 if token in spd_masks:
                     mask[:] |= spd_masks[token]
+                    return
+
+                if token.isdigit():
+                    add_one(int(token))
                     return
 
                 if token in name_to_index:
