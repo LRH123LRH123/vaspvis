@@ -878,6 +878,8 @@ def band_mixed_projections(
     use_vaspkit_kpath=False,
     include_tot=True,
     data_precision=6,
+    energy_data_precision=6,
+    compact_data_labels=False,
     save=True,
     shift_efermi=0,
     interpolate=False,
