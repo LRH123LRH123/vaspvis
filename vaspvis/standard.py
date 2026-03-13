@@ -827,7 +827,7 @@ def band_mixed_projections(
     color_list=None,
     legend=True,
     legend_fontsize=14,
-    linewidth=2,
+    linewidth=1,
     band_color="black",
     figsize=(4, 3),
     erange=[-6, 6],
@@ -845,7 +845,7 @@ def band_mixed_projections(
     cmap="hot",
     vlinecolor="black",
     kline_style="--",
-    kline_width=2,
+    kline_width=1,
     cbar=True,
     cbar_orientation="horizontal",
     powernorm=True,
@@ -857,7 +857,7 @@ def band_mixed_projections(
     xtick_rotation=0,
     tick_params_kwargs=None,
     tick_label_pad=None,
-    spine_linewidth=2,
+    spine_linewidth=1,
     draw_horizontal_fermi=True,
     horizontal_fermi_kwargs=None,
     draw_vertical_kgrid=False,
@@ -1027,7 +1027,7 @@ def band_mixed_projections(
         if horizontal_fermi_kwargs is None:
             horizontal_fermi_kwargs = {
                 "linestyle": "--",
-                "linewidth": 2,
+                "linewidth": 1,
                 "color": "0.5",
             }
         ax.axhline(y=0, **horizontal_fermi_kwargs)
@@ -1036,7 +1036,7 @@ def band_mixed_projections(
         if vertical_kgrid_kwargs is None:
             vertical_kgrid_kwargs = {
                 "linestyle": "--",
-                "linewidth": 2,
+                "linewidth": 1,
                 "color": "0.5",
             }
         xticks = ax.get_xticks()

@@ -1901,7 +1901,7 @@ class Band:
         sp_color="red",
         sp_scale_factor=5,
         kline_style="--",
-        kline_width=2,
+        kline_width=1,
     ):
         """
         This function plots a plain band structure.
@@ -2214,7 +2214,7 @@ class Band:
         scale_factor=5,
         erange=[-6, 6],
         display_order=None,
-        linewidth=2,
+        linewidth=1,
         band_color="black",
         heatmap=False,
         bins=400,
@@ -2225,7 +2225,7 @@ class Band:
         gamma=0.5,
         plain_scale_factor=10,
         kline_style="--",
-        kline_width=2,
+        kline_width=1,
     ):
         """
         This is a general method for plotting projected data
@@ -2410,7 +2410,7 @@ class Band:
         scale_factor=5,
         erange=[-6, 6],
         display_order=None,
-        linewidth=2,
+        linewidth=1,
         band_color="black",
         heatmap=False,
         bins=400,
@@ -2422,7 +2422,7 @@ class Band:
         plain_scale_factor=10,
         scatter_mode="flattened",
         kline_style="--",
-        kline_width=2,
+        kline_width=1,
     ):
         """
         This is a new projected-data plotting method that preserves the
@@ -3380,7 +3380,7 @@ class Band:
         color_list=None,
         legend=True,
         legend_fontsize=14,
-        linewidth=2,
+        linewidth=1,
         band_color="black",
         heatmap=False,
         bins=400,
@@ -3391,7 +3391,7 @@ class Band:
         gamma=0.5,
         scatter_mode="layered",
         kline_style="--",
-        kline_width=2,
+        kline_width=1,
     ):
         """
         This function plots generalized mixed projections.
