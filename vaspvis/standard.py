@@ -878,8 +878,6 @@ def band_mixed_projections(
     use_vaspkit_kpath=False,
     include_tot=True,
     data_precision=6,
-    energy_data_precision=6,
-    compact_data_labels=False,
     save=True,
     shift_efermi=0,
     interpolate=False,
@@ -1139,8 +1137,6 @@ def band_mixed_projections(
             snake_kpoints=snake_kpoints,
             include_tot=include_tot,
             precision=data_precision,
-            energy_precision=energy_data_precision,
-            compact_labels=compact_data_labels,
         )
 
     if save:
@@ -4400,8 +4396,6 @@ def dos_mixed_projections(
             output=data_output,
             include_tot=include_tot,
             precision=data_precision,
-            energy_precision=energy_data_precision,
-            compact_labels=compact_data_labels,
         )
 
     if save:
