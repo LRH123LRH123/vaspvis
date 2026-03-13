@@ -938,6 +938,131 @@ class Band:
 
         return projected_data, labels
 
+
+    def _get_vaspkit_kpath_scale(self, kpath_distances):
+        """Get scaling factor to map internal k-path distances to KLABELS style."""
+
+        klabels_path = os.path.join(self.folder, "KLABELS")
+        if not os.path.isfile(klabels_path):
+            return 1.0
+
+        last_distance = None
+        with open(klabels_path, "r") as klabels_file:
+            for line in klabels_file:
+                line_strip = line.strip()
+                if len(line_strip) == 0 or line_strip.startswith("#"):
+                    continue
+
+                parts = line_strip.split()
+                try:
+                    last_distance = float(parts[-1])
+                except (ValueError, IndexError):
+                    continue
+
+        if last_distance is None:
+            return 1.0
+
+        internal_max = np.max(kpath_distances)
+        if internal_max == 0:
+            return 1.0
+
+        return last_distance / internal_max
+
+    def export_mixed_projections_data(
+        self,
+        projection_spec,
+        output="PBAND_mixed.dat",
+        use_vaspkit_kpath=False,
+        snake_kpoints=True,
+        include_tot=True,
+        precision=6,
+    ):
+        """
+        Export mixed projection band data to a text file.
+        """
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+
+        kpath_distances = np.concatenate(self._get_k_distance())
+
+        if use_vaspkit_kpath:
+            scale = self._get_vaspkit_kpath_scale(kpath_distances)
+            kpath_distances = kpath_distances * scale
+
+        eigenvalues = np.array(self.eigenvalues)
+
+        if self.unfold:
+            K_indices = np.array(self.K_indices[0], dtype=int)
+            projected_data = projected_data[:, K_indices, :]
+            if eigenvalues.shape[1] != len(kpath_distances):
+                eigenvalues = eigenvalues[:, K_indices]
+
+        if eigenvalues.shape[1] != len(kpath_distances):
+            raise ValueError(
+                "Mismatch between eigenvalue kpoints and k-path distance length"
+            )
+
+        nkpts = projected_data.shape[1]
+        nbands = projected_data.shape[0]
+
+        label_header = []
+        for label in labels:
+            clean_label = (
+                str(label)
+                .replace("$", "")
+                .replace("{", "")
+                .replace("}", "")
+                .replace(" ", "_")
+            )
+            label_header.append(clean_label)
+
+        with open(output, "w") as out_file:
+            header_cols = "    ".join(label_header)
+            if include_tot:
+                out_file.write(
+                    f"#K-Path          Energy     {header_cols}    tot\n"
+                )
+            else:
+                out_file.write(f"#K-Path          Energy     {header_cols}\n")
+
+            out_file.write(f"# NKPTS & NBANDS: {nkpts} {nbands}\n")
+
+            for band_ind in range(nbands):
+                out_file.write(f"# Band-Index:    {band_ind + 1}\n")
+
+                if snake_kpoints and ((band_ind + 1) % 2 == 0):
+                    kvals = kpath_distances[::-1]
+                    evals = eigenvalues[band_ind][::-1]
+                    pvals = projected_data[band_ind][::-1]
+                else:
+                    kvals = kpath_distances
+                    evals = eigenvalues[band_ind]
+                    pvals = projected_data[band_ind]
+
+                for kpoint_ind in range(nkpts):
+                    projection_values = pvals[kpoint_ind]
+                    proj_str = "  ".join(
+                        [f"{val:.3f}" for val in projection_values]
+                    )
+
+                    if include_tot:
+                        tot_val = np.sum(projection_values)
+                        out_file.write(
+                            f"{kvals[kpoint_ind]:10.{precision}f}    "
+                            f"{evals[kpoint_ind]:12.{precision}f}  "
+                            f"{proj_str}  {tot_val:.3f}\n"
+                        )
+                    else:
+                        out_file.write(
+                            f"{kvals[kpoint_ind]:10.{precision}f}    "
+                            f"{evals[kpoint_ind]:12.{precision}f}  "
+                            f"{proj_str}\n"
+                        )
+
+                out_file.write("\n")
+
     def _sum_orbitals(self, orbitals):
         """
         This function finds the weights of desired orbitals for all atoms and

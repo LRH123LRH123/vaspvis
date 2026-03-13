@@ -868,6 +868,12 @@ def band_mixed_projections(
     ytick_fontsize=None,
     ytick_fontname=None,
     box_aspect=None,
+    export_data=False,
+    data_output="PBAND_mixed.dat",
+    snake_kpoints=True,
+    use_vaspkit_kpath=False,
+    include_tot=True,
+    data_precision=6,
     save=True,
     shift_efermi=0,
     interpolate=False,
@@ -1107,6 +1113,16 @@ def band_mixed_projections(
             fig.tight_layout(pad=0.4)
     else:
         fig.tight_layout(pad=0.4)
+
+    if export_data:
+        band.export_mixed_projections_data(
+            projection_spec=projection_spec,
+            output=data_output,
+            use_vaspkit_kpath=use_vaspkit_kpath,
+            snake_kpoints=snake_kpoints,
+            include_tot=include_tot,
+            precision=data_precision,
+        )
 
     if save:
         plt.savefig(output)
