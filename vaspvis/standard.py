@@ -1137,6 +1137,8 @@ def band_mixed_projections(
             snake_kpoints=snake_kpoints,
             include_tot=include_tot,
             precision=data_precision,
+            energy_precision=energy_data_precision,
+            compact_labels=compact_data_labels,
         )
 
     if save:
@@ -4311,7 +4313,9 @@ def dos_mixed_projections(
     export_data=False,
     data_output="PDOS_mixed.dat",
     include_tot=True,
-    data_precision=6,
+    data_precision=5,
+    energy_data_precision=5,
+    compact_data_labels=True,
 ):
     """
     Plot mixed DOS projections with generalized atom/orbital selectors.
@@ -4355,6 +4359,8 @@ def dos_mixed_projections(
             output=data_output,
             include_tot=include_tot,
             precision=data_precision,
+            energy_precision=energy_data_precision,
+            compact_labels=compact_data_labels,
         )
 
     if save:

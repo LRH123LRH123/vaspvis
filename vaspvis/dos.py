@@ -136,8 +136,8 @@ class Dos:
         self.orbital_labels = {
             0: "s",
             1: "p_{y}",
-            2: "p_{x}",
-            3: "p_{z}",
+            2: "p_{z}",
+            3: "p_{x}",
             4: "d_{xy}",
             5: "d_{yz}",
             6: "d_{z^{2}}",
@@ -591,10 +591,10 @@ class Dos:
             "s": 0,
             "py": 1,
             "p_y": 1,
-            "px": 2,
-            "p_x": 2,
-            "pz": 3,
-            "p_z": 3,
+            "pz": 2,
+            "p_z": 2,
+            "px": 3,
+            "p_x": 3,
             "dxy": 4,
             "d_xy": 4,
             "dyz": 5,
@@ -866,65 +866,72 @@ class Dos:
         projection_spec,
         output="PDOS_mixed.dat",
         include_tot=True,
-        precision=6,
+        precision=5,
+        energy_precision=5,
+        compact_labels=True,
     ):
         """Export mixed DOS projection data to a text file."""
 
         projected_data, labels = self._sum_mixed_projections(
             projection_spec=projection_spec
         )
+        spec_list = self._normalize_mixed_projection_spec(projection_spec)
+
+        clean_labels = []
+        atom_selectors = [str(atom_sel).strip() for atom_sel, _ in spec_list]
+        same_atom_selector = len(atom_selectors) > 0 and len(set(atom_selectors)) == 1
+
+        for (atom_sel, orb_sel), label in zip(spec_list, labels):
+            if compact_labels and same_atom_selector:
+                clean_label = self._format_orbital_selector_label(orb_sel)
+            else:
+                clean_label = str(label)
+
+            clean_label = (
+                clean_label.replace("$", "")
+                .replace("{", "")
+                .replace("}", "")
+                .replace(" ", "_")
+                .replace("\\", "")
+                .replace("_", "")
+            )
+            clean_labels.append(clean_label)
+
+        energies = self.tdos_array[:, 0]
+
+        if (
+            self.spin == "both"
+            and self.combination_method == "sub"
+            and self.sp_method == "percentage"
+        ):
+            projected_sum = (projected_data[0] - projected_data[1]) / (
+                projected_data[0] + projected_data[1]
+            )
+            projected_sum[np.isnan(projected_sum)] = 1e-9
+        else:
+            projected_sum = projected_data
+
+        col_width = max([12] + [len(c) + 2 for c in clean_labels] + [5])
 
         with open(output, "w") as out_file:
-            label_header = []
-            for label in labels:
-                clean_label = (
-                    str(label)
-                    .replace("$", "")
-                    .replace("{", "")
-                    .replace("}", "")
-                    .replace(" ", "_")
-                )
-                label_header.append(clean_label)
-
-            header_cols = "    ".join(label_header)
+            header = f"# {'Energy':<{col_width}}"
+            for col in clean_labels:
+                header += f"{col:>{col_width}}"
             if include_tot:
-                out_file.write(
-                    f"#Energy          {header_cols}    tot\n"
-                )
-            else:
-                out_file.write(f"#Energy          {header_cols}\n")
-
-            energies = self.tdos_array[:, 0]
-
-            if (
-                self.spin == "both"
-                and self.combination_method == "sub"
-                and self.sp_method == "percentage"
-            ):
-                projected_sum = (projected_data[0] - projected_data[1]) / (
-                    projected_data[0] + projected_data[1]
-                )
-                projected_sum[np.isnan(projected_sum)] = 1e-9
-            else:
-                projected_sum = projected_data
+                header += f"{'tot':>{col_width}}"
+            out_file.write(header + "\n")
 
             for i in range(len(energies)):
                 projection_values = projected_sum[i]
-                proj_str = "  ".join(
-                    [f"{val:.3f}" for val in projection_values]
-                )
+                row = f"{energies[i]:{col_width}.{energy_precision}f}"
+                for val in projection_values:
+                    row += f"{val:{col_width}.{precision}f}"
 
                 if include_tot:
                     tot_val = np.sum(projection_values)
-                    out_file.write(
-                        f"{energies[i]:12.{precision}f}    "
-                        f"{proj_str}  {tot_val:.3f}\n"
-                    )
-                else:
-                    out_file.write(
-                        f"{energies[i]:12.{precision}f}    "
-                        f"{proj_str}\n"
-                    )
+                    row += f"{tot_val:{col_width}.{precision}f}"
+
+                out_file.write(row + "\n")
 
     def _sum_orbitals(self, orbitals):
         """
