@@ -4320,9 +4320,13 @@ def dos_mixed_projections(
     """
     Plot mixed DOS projections with generalized atom/orbital selectors.
 
-    projection_spec examples:
+    Notes:
+        - ``energyaxis`` defaults to ``"y"`` (Energy on y-axis).
+        - Use ``shift_efermi`` to rigidly shift the reference Fermi level.
+
+    ``projection_spec`` examples:
         {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"]}
-        [("As", "p"), ("In", 3), ("In", "pz"), ("As|In", "d"), ("all", "px|py")]
+        [("As", "p"), ("As", "px"), ("As", "py"), ("As", "pz"), ("In", "d")]
     """
 
     dos = Dos(

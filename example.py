@@ -169,6 +169,45 @@ standard.dos_element_orbitals(
 
 
 # ==================================================
+# --------- Mixed Projection Dos Structure ---------
+# ==================================================
+
+# energyaxis defaults to 'y' for dos_mixed_projections.
+# Use energyaxis='x' if you prefer the older DOS orientation.
+standard.dos_mixed_projections(
+    folder=dos_folder,
+    projection_spec=[
+        ("As", "px"),
+        ("As", "py"),
+        ("As", "pz"),
+        ("In", "d"),
+    ],
+    energyaxis='y',
+    erange=[-3, 1],
+    shift_efermi=0.0,
+    color_list=['#d93b2b', '#0075dc', '#0db14b', '#740aff'],
+)
+
+# You can mix grouped orbitals (p/d/f), resolved orbitals (pz, dxy),
+# numeric indices (3), atom unions (As|In), and all atoms (all).
+standard.dos_mixed_projections(
+    folder=dos_folder,
+    projection_spec={
+        'As': ['p'],
+        'In': [3, 'pz'],
+        'As|In': ['d'],
+        'all': ['px|py'],
+    },
+    energyaxis='y',
+    erange=[-3, 1],
+    shift_efermi=0.0,
+    export_data=True,
+    data_output='PDOS_mixed.dat',
+    include_tot=True,
+)
+
+
+# ==================================================
 # -------------- Plain Dos Structure --------------
 # ==================================================
 
