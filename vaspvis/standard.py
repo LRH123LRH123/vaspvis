@@ -856,6 +856,8 @@ def band_mixed_projections(
     xtick_fontname=None,
     xtick_rotation=0,
     tick_params_kwargs=None,
+    ytick_direction="in",
+    ytick_length=4,
     tick_label_pad=None,
     spine_linewidth=1,
     draw_horizontal_fermi=True,
@@ -1012,6 +1014,8 @@ def band_mixed_projections(
             rotation=xtick_rotation,
             **xtick_kwargs,
         )
+
+    ax.tick_params(axis="y", direction=ytick_direction, length=ytick_length)
 
     if tick_params_kwargs is not None:
         ax.tick_params(**tick_params_kwargs)
