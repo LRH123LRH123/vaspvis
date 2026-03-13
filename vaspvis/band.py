@@ -3379,6 +3379,7 @@ class Band:
         display_order=None,
         color_list=None,
         legend=True,
+        legend_fontsize=14,
         linewidth=2,
         band_color="black",
         heatmap=False,
@@ -3434,7 +3435,12 @@ class Band:
         )
 
         if legend:
-            self._add_legend(ax=ax, names=labels, colors=colors)
+            self._add_legend(
+                ax=ax,
+                names=labels,
+                colors=colors,
+                fontsize=legend_fontsize,
+            )
 
     def plot_elements(
         self,
