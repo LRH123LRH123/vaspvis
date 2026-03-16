@@ -540,32 +540,41 @@ class Band:
                 projected_eigenvalues,
             )
 
-        projected_eigenvalues = projected_eigenvalues[:, :, spin, :, :]
+        projected_eigenvalues_all_spins = projected_eigenvalues
+        projected_eigenvalues = projected_eigenvalues_all_spins[:, :, spin, :, :]
+
+        skip_square = False
 
         if self.lsorbit and self.soc_axis is not None:
-            separated_projections = np.zeros(
-                projected_eigenvalues.shape + (2,)
-            )
-            separated_projections[
-                projected_eigenvalues > 0, 0
-            ] = projected_eigenvalues[projected_eigenvalues > 0]
-            separated_projections[
-                projected_eigenvalues < 0, 1
-            ] = -projected_eigenvalues[projected_eigenvalues < 0]
+            separated_projections = projected_eigenvalues
 
             if self.spin == "up":
-                soc_spin = 0
+                separated_projections = np.where(
+                    separated_projections > 0, separated_projections, 0
+                )
             elif self.spin == "down":
-                soc_spin = 1
+                separated_projections = np.where(
+                    separated_projections < 0, -separated_projections, 0
+                )
+            elif self.spin == "both":
+                separated_projections = projected_eigenvalues_all_spins[
+                    :, :, spin, :, :
+                ]
+                skip_square = True
+            else:
+                raise ValueError(
+                    "spin must be one of ['up', 'down', 'both'] for soc_axis"
+                )
 
-            projected_eigenvalues = separated_projections[..., soc_spin]
+            projected_eigenvalues = separated_projections
 
         if self.hse:
             kpoint_weights = np.array(self.eigenval.kpoints_weights)
             zero_weight = np.where(kpoint_weights == 0)[0]
             projected_eigenvalues = projected_eigenvalues[:, zero_weight]
 
-        projected_eigenvalues = np.square(projected_eigenvalues)
+        if not skip_square:
+            projected_eigenvalues = np.square(projected_eigenvalues)
 
         return projected_eigenvalues
 
@@ -620,30 +629,27 @@ class Band:
             zero_weight = np.where(kpoint_weights == 0)[0]
             spin_projections = spin_projections[:, zero_weight]
 
-        separated_projections = np.zeros(
-            (spin_projections.shape[0], spin_projections.shape[1], 2)
-        )
-        separated_projections[spin_projections > 0, 0] = spin_projections[
-            spin_projections > 0
-        ]
-        separated_projections[spin_projections < 0, 1] = -spin_projections[
-            spin_projections < 0
-        ]
-
-        separated_projections = (
-            separated_projections / separated_projections.max()
-        )
+        separated_projections = spin_projections
 
         if self.spin == "up":
-            separated_projections = separated_projections[:, :, 0]
+            separated_projections = np.where(
+                separated_projections > 0, separated_projections, 0
+            )
         elif self.spin == "down":
-            separated_projections = separated_projections[:, :, 1]
+            separated_projections = np.where(
+                separated_projections < 0, -separated_projections, 0
+            )
         elif self.spin == "both":
-            separated_projections = separated_projections
+            separated_projections = spin_projections
         else:
             raise ValueError(
                 "spin must be one of ['up', 'down', 'both'] for soc_axis"
             )
+
+        if self.spin in ["up", "down"]:
+            max_projection = np.max(np.abs(separated_projections))
+            if max_projection > 0:
+                separated_projections = separated_projections / max_projection
 
         return separated_projections
 
@@ -2006,7 +2012,7 @@ class Band:
                 if spin_projections.ndim == 3:
                     spin_projections_to_plot = np.sum(spin_projections, axis=2)
                 else:
-                    spin_projections_to_plot = spin_projections
+                    spin_projections_to_plot = np.abs(spin_projections)
 
                 spin_projections_ravel = np.ravel(
                     np.c_[
