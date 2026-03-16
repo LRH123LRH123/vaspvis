@@ -638,9 +638,11 @@ class Band:
             separated_projections = separated_projections[:, :, 0]
         elif self.spin == "down":
             separated_projections = separated_projections[:, :, 1]
+        elif self.spin == "both":
+            separated_projections = separated_projections
         else:
-            raise BaseException(
-                "The soc_axis feature does not work with spin='both'"
+            raise ValueError(
+                "spin must be one of ['up', 'down', 'both'] for soc_axis"
             )
 
         return separated_projections
@@ -2001,10 +2003,15 @@ class Band:
 
             if self.soc_axis is not None and self.lsorbit:
                 #  spin_cmap = self._alpha_cmap(color=spin_projection_color, repeats=1)
+                if spin_projections.ndim == 3:
+                    spin_projections_to_plot = np.sum(spin_projections, axis=2)
+                else:
+                    spin_projections_to_plot = spin_projections
+
                 spin_projections_ravel = np.ravel(
                     np.c_[
-                        spin_projections,
-                        np.empty(spin_projections.shape[0]) * np.nan,
+                        spin_projections_to_plot,
+                        np.empty(spin_projections_to_plot.shape[0]) * np.nan,
                     ]
                 )
                 #  spin_colors = [spin_cmap(s) for s in spin_projections_ravel]
