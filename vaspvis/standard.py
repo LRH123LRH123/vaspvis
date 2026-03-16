@@ -4305,6 +4305,8 @@ def dos_mixed_projections(
     spin="up",
     soc_axis=None,
     combination_method="add",
+    sp_method="percentage",
+    efermi_folder=None,
     fontsize=12,
     save=True,
     shift_efermi=0,
@@ -4335,6 +4337,7 @@ def dos_mixed_projections(
         - Tick style can be controlled by ``tick_length`` and ``tick_width``.
         - Frame style can be controlled by ``spine_width``.
         - Use ``shift_efermi`` to rigidly shift the reference Fermi level.
+        - ``sp_method`` and ``efermi_folder`` are forwarded to ``Dos(...)``.
 
     ``projection_spec`` examples:
         {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"]}
@@ -4347,6 +4350,8 @@ def dos_mixed_projections(
         spin=spin,
         soc_axis=soc_axis,
         combination_method=combination_method,
+        sp_method=sp_method,
+        efermi_folder=efermi_folder,
     )
 
     fig = plt.figure(figsize=figsize, dpi=400)
