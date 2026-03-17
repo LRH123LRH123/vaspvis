@@ -4340,7 +4340,7 @@ def dos_mixed_projections(
         - ``sp_method`` and ``efermi_folder`` are forwarded to ``Dos(...)``.
 
     ``projection_spec`` examples:
-        {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"]}
+        {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"], "Total": ["total"]}
         [("As", "p"), ("As", "px"), ("As", "py"), ("As", "pz"), ("In", "d")]
     """
 

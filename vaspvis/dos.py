@@ -847,6 +847,22 @@ class Dos:
 
         raise TypeError(f"Unsupported orbital selector type for label: {type(selector)}")
 
+    def _is_total_projection_selector(self, atom_sel, orb_sel):
+        """Whether selector requests TDOS instead of summed PDOS."""
+
+        atom_token = (
+            atom_sel.strip().lower()
+            if isinstance(atom_sel, str)
+            else None
+        )
+        orb_token = (
+            orb_sel.strip().lower()
+            if isinstance(orb_sel, str)
+            else None
+        )
+
+        return atom_token in {"total", "tdos"} or orb_token == "total"
+
     def _sum_mixed_projections(self, projection_spec):
         """Generalized DOS projection combiner for atom/orbital selectors."""
 
@@ -864,6 +880,18 @@ class Dos:
             pieces_down = []
 
             for atom_sel, orb_sel in spec_list:
+                if self._is_total_projection_selector(atom_sel, orb_sel):
+                    tdos_up = self.doscar["total"][:, 1]
+                    if self.doscar["total"].shape[1] > 2:
+                        tdos_down = self.doscar["total"][:, 2]
+                    else:
+                        tdos_down = np.zeros_like(tdos_up)
+
+                    pieces_up.append(tdos_up)
+                    pieces_down.append(tdos_down)
+                    labels.append("Total(total)")
+                    continue
+
                 atom_mask = self._parse_atom_selector(atom_sel)
                 orb_mask = self._parse_orbital_selector(orb_sel)
 
@@ -886,6 +914,11 @@ class Dos:
             )
         else:
             for atom_sel, orb_sel in spec_list:
+                if self._is_total_projection_selector(atom_sel, orb_sel):
+                    pieces.append(self.tdos_array[:, 1])
+                    labels.append("Total(total)")
+                    continue
+
                 atom_mask = self._parse_atom_selector(atom_sel)
                 orb_mask = self._parse_orbital_selector(orb_sel)
 
@@ -2081,7 +2114,7 @@ class Dos:
         Plot generalized mixed DOS projections using atom/orbital selectors.
 
         projection_spec examples:
-            {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"]}
+            {"As": ["p"], "In": [3, "pz"], "As|In": ["d"], "all": ["px|py", "d"], "Total": ["total"]}
             [("As", "p"), ("In", 3), ("In", "pz"), ("As|In", "d"), ("all", "px|py")]
         """
 
