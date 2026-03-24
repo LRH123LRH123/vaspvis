@@ -540,32 +540,41 @@ class Band:
                 projected_eigenvalues,
             )
 
-        projected_eigenvalues = projected_eigenvalues[:, :, spin, :, :]
+        projected_eigenvalues_all_spins = projected_eigenvalues
+        projected_eigenvalues = projected_eigenvalues_all_spins[:, :, spin, :, :]
+
+        skip_square = False
 
         if self.lsorbit and self.soc_axis is not None:
-            separated_projections = np.zeros(
-                projected_eigenvalues.shape + (2,)
-            )
-            separated_projections[
-                projected_eigenvalues > 0, 0
-            ] = projected_eigenvalues[projected_eigenvalues > 0]
-            separated_projections[
-                projected_eigenvalues < 0, 1
-            ] = -projected_eigenvalues[projected_eigenvalues < 0]
+            separated_projections = projected_eigenvalues
 
             if self.spin == "up":
-                soc_spin = 0
+                separated_projections = np.where(
+                    separated_projections > 0, separated_projections, 0
+                )
             elif self.spin == "down":
-                soc_spin = 1
+                separated_projections = np.where(
+                    separated_projections < 0, -separated_projections, 0
+                )
+            elif self.spin == "both":
+                separated_projections = projected_eigenvalues_all_spins[
+                    :, :, spin, :, :
+                ]
+                skip_square = True
+            else:
+                raise ValueError(
+                    "spin must be one of ['up', 'down', 'both'] for soc_axis"
+                )
 
-            projected_eigenvalues = separated_projections[..., soc_spin]
+            projected_eigenvalues = separated_projections
 
         if self.hse:
             kpoint_weights = np.array(self.eigenval.kpoints_weights)
             zero_weight = np.where(kpoint_weights == 0)[0]
             projected_eigenvalues = projected_eigenvalues[:, zero_weight]
 
-        projected_eigenvalues = np.square(projected_eigenvalues)
+        if not skip_square:
+            projected_eigenvalues = np.square(projected_eigenvalues)
 
         return projected_eigenvalues
 
@@ -620,28 +629,27 @@ class Band:
             zero_weight = np.where(kpoint_weights == 0)[0]
             spin_projections = spin_projections[:, zero_weight]
 
-        separated_projections = np.zeros(
-            (spin_projections.shape[0], spin_projections.shape[1], 2)
-        )
-        separated_projections[spin_projections > 0, 0] = spin_projections[
-            spin_projections > 0
-        ]
-        separated_projections[spin_projections < 0, 1] = -spin_projections[
-            spin_projections < 0
-        ]
-
-        separated_projections = (
-            separated_projections / separated_projections.max()
-        )
+        separated_projections = spin_projections
 
         if self.spin == "up":
-            separated_projections = separated_projections[:, :, 0]
-        elif self.spin == "down":
-            separated_projections = separated_projections[:, :, 1]
-        else:
-            raise BaseException(
-                "The soc_axis feature does not work with spin='both'"
+            separated_projections = np.where(
+                separated_projections > 0, separated_projections, 0
             )
+        elif self.spin == "down":
+            separated_projections = np.where(
+                separated_projections < 0, -separated_projections, 0
+            )
+        elif self.spin == "both":
+            separated_projections = spin_projections
+        else:
+            raise ValueError(
+                "spin must be one of ['up', 'down', 'both'] for soc_axis"
+            )
+
+        if self.spin in ["up", "down"]:
+            max_projection = np.max(np.abs(separated_projections))
+            if max_projection > 0:
+                separated_projections = separated_projections / max_projection
 
         return separated_projections
 
@@ -691,6 +699,377 @@ class Band:
         ]
 
         return spd_contributions
+
+    def _orbital_name_to_index(self):
+        """Map common orbital names/aliases to orbital indices."""
+
+        name_to_index = {
+            "s": 0,
+            "py": 1,
+            "p_y": 1,
+            "pz": 2,
+            "p_z": 2,
+            "px": 3,
+            "p_x": 3,
+            "dxy": 4,
+            "d_xy": 4,
+            "dyz": 5,
+            "d_yz": 5,
+            "dz2": 6,
+            "d_z2": 6,
+            "dz^2": 6,
+            "d_z^2": 6,
+            "dxz": 7,
+            "d_xz": 7,
+            "dx2-y2": 8,
+            "dx2y2": 8,
+            "d_x2-y2": 8,
+            "d_x2y2": 8,
+        }
+
+        if self.forbitals:
+            name_to_index.update(
+                {
+                    "fy3x2": 9,
+                    "fxyz": 10,
+                    "fyz2": 11,
+                    "fz3": 12,
+                    "fxz2": 13,
+                    "fzx3": 14,
+                    "fx3": 15,
+                }
+            )
+
+        return name_to_index
+
+    def _get_spd_masks(self):
+        """Return boolean masks for s/p/d/(f) orbital groups."""
+
+        if not self.forbitals:
+            masks = [np.zeros(9, dtype=bool) for _ in range(3)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+        else:
+            masks = [np.zeros(16, dtype=bool) for _ in range(4)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+            masks[3][9:16] = True
+
+        return {
+            "s": masks[0],
+            "p": masks[1],
+            "d": masks[2],
+            **({"f": masks[3]} if self.forbitals else {}),
+        }
+
+    def _parse_orbital_selector(self, selector):
+        """Convert one selector into a boolean orbital mask."""
+
+        norb = 16 if self.forbitals else 9
+        mask = np.zeros(norb, dtype=bool)
+
+        spd_masks = self._get_spd_masks()
+        name_to_index = self._orbital_name_to_index()
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= norb:
+                    raise ValueError(
+                        f"Orbital index {item} out of range 0..{norb - 1}"
+                    )
+                mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip().lower()
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                if token in spd_masks:
+                    mask[:] |= spd_masks[token]
+                    return
+
+                if token in name_to_index:
+                    mask[name_to_index[token]] = True
+                    return
+
+                raise ValueError(f"Unsupported orbital selector: {item}")
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(
+                f"Unsupported orbital selector type: {type(item)}"
+            )
+
+        add_one(selector)
+        return mask
+
+    def _parse_atom_selector(self, selector):
+        """Convert atom selector into a boolean atom mask."""
+
+        natom = self.projected_eigenvalues.shape[2]
+        atom_mask = np.zeros(natom, dtype=bool)
+
+        natoms = self.poscar.natoms
+        symbols = self.poscar.site_symbols
+        element_list = np.hstack(
+            [[symbols[i] for _ in range(natoms[i])] for i in range(len(symbols))]
+        )
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= natom:
+                    raise ValueError(
+                        f"Atom index {item} out of range 0..{natom - 1}"
+                    )
+                atom_mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip()
+
+                if token.lower() == "all":
+                    atom_mask[:] = True
+                    return
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                inds = np.where(element_list == token)[0]
+                if len(inds) == 0:
+                    raise ValueError(f"Element '{token}' not found in POSCAR")
+                atom_mask[inds] = True
+                return
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(f"Unsupported atom selector type: {type(item)}")
+
+        add_one(selector)
+        return atom_mask
+
+    def _normalize_mixed_projection_spec(self, projection_spec):
+        """Normalize user spec into a list of (atom_selector, orbital_selector)."""
+
+        normalized = []
+
+        if isinstance(projection_spec, dict):
+            for atom_sel, orb_sel in projection_spec.items():
+                if isinstance(orb_sel, (list, tuple, set)):
+                    for item in orb_sel:
+                        normalized.append((atom_sel, item))
+                else:
+                    normalized.append((atom_sel, orb_sel))
+            return normalized
+
+        if isinstance(projection_spec, (list, tuple)):
+            for item in projection_spec:
+                if not (
+                    isinstance(item, (list, tuple)) and len(item) == 2
+                ):
+                    raise ValueError(
+                        "List-style projection_spec must contain pairs like ('As', 'p')"
+                    )
+                normalized.append((item[0], item[1]))
+            return normalized
+
+        raise TypeError("projection_spec must be dict or list of pairs")
+
+    def _format_orbital_selector_label(self, selector):
+        """Format orbital selector text for legend labels."""
+
+        if isinstance(selector, (int, np.integer)):
+            if selector not in self.orbital_labels:
+                raise ValueError(f"Unsupported orbital index for label: {selector}")
+            return self.orbital_labels[int(selector)]
+
+        if isinstance(selector, str):
+            token = selector.strip()
+            token_lower = token.lower()
+
+            if "|" in token:
+                return "|".join(
+                    [self._format_orbital_selector_label(part) for part in token.split("|")]
+                )
+
+            if token_lower in ["s", "p", "d", "f"]:
+                return token_lower
+
+            orbital_map = self._orbital_name_to_index()
+            if token_lower in orbital_map:
+                return self.orbital_labels[orbital_map[token_lower]]
+
+            return token
+
+        if isinstance(selector, (list, tuple, set)):
+            return "|".join(
+                [self._format_orbital_selector_label(item) for item in selector]
+            )
+
+        raise TypeError(f"Unsupported orbital selector type for label: {type(selector)}")
+
+    def _sum_mixed_projections(self, projection_spec):
+        """Generalized projection combiner for atom/orbital mixed selectors."""
+
+        spec_list = self._normalize_mixed_projection_spec(projection_spec)
+
+        pieces = []
+        labels = []
+
+        for atom_sel, orb_sel in spec_list:
+            atom_mask = self._parse_atom_selector(atom_sel)
+            orb_mask = self._parse_orbital_selector(orb_sel)
+
+            atom_summed = np.sum(
+                self.projected_eigenvalues[:, :, atom_mask, :], axis=2
+            )
+            one_piece = np.sum(atom_summed[:, :, orb_mask], axis=2)
+
+            pieces.append(one_piece)
+            orbital_label = self._format_orbital_selector_label(orb_sel)
+            labels.append(f"{atom_sel}({orbital_label})")
+
+        projected_data = np.transpose(np.array(pieces), axes=(1, 2, 0))
+
+        return projected_data, labels
+
+
+    def _get_vaspkit_kpath_scale(self, kpath_distances):
+        """Get scaling factor to map internal k-path distances to KLABELS style."""
+
+        klabels_path = os.path.join(self.folder, "KLABELS")
+        if not os.path.isfile(klabels_path):
+            return 1.0
+
+        last_distance = None
+        with open(klabels_path, "r") as klabels_file:
+            for line in klabels_file:
+                line_strip = line.strip()
+                if len(line_strip) == 0 or line_strip.startswith("#"):
+                    continue
+
+                parts = line_strip.split()
+                try:
+                    last_distance = float(parts[-1])
+                except (ValueError, IndexError):
+                    continue
+
+        if last_distance is None:
+            return 1.0
+
+        internal_max = np.max(kpath_distances)
+        if internal_max == 0:
+            return 1.0
+
+        return last_distance / internal_max
+
+    def export_mixed_projections_data(
+        self,
+        projection_spec,
+        output="PBAND_mixed.dat",
+        use_vaspkit_kpath=False,
+        snake_kpoints=True,
+        include_tot=True,
+        precision=6,
+    ):
+        """
+        Export mixed projection band data to a text file.
+        """
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+
+        kpath_distances = np.concatenate(self._get_k_distance())
+
+        if use_vaspkit_kpath:
+            scale = self._get_vaspkit_kpath_scale(kpath_distances)
+            kpath_distances = kpath_distances * scale
+
+        eigenvalues = np.array(self.eigenvalues)
+
+        if self.unfold:
+            K_indices = np.array(self.K_indices[0], dtype=int)
+            projected_data = projected_data[:, K_indices, :]
+            if eigenvalues.shape[1] != len(kpath_distances):
+                eigenvalues = eigenvalues[:, K_indices]
+
+        if eigenvalues.shape[1] != len(kpath_distances):
+            raise ValueError(
+                "Mismatch between eigenvalue kpoints and k-path distance length"
+            )
+
+        nkpts = projected_data.shape[1]
+        nbands = projected_data.shape[0]
+
+        label_header = []
+        for label in labels:
+            clean_label = (
+                str(label)
+                .replace("$", "")
+                .replace("{", "")
+                .replace("}", "")
+                .replace(" ", "_")
+            )
+            label_header.append(clean_label)
+
+        with open(output, "w") as out_file:
+            header_cols = "    ".join(label_header)
+            if include_tot:
+                out_file.write(
+                    f"#K-Path          Energy     {header_cols}    tot\n"
+                )
+            else:
+                out_file.write(f"#K-Path          Energy     {header_cols}\n")
+
+            out_file.write(f"# NKPTS & NBANDS: {nkpts} {nbands}\n")
+
+            for band_ind in range(nbands):
+                out_file.write(f"# Band-Index:    {band_ind + 1}\n")
+
+                if snake_kpoints and ((band_ind + 1) % 2 == 0):
+                    kvals = kpath_distances[::-1]
+                    evals = eigenvalues[band_ind][::-1]
+                    pvals = projected_data[band_ind][::-1]
+                else:
+                    kvals = kpath_distances
+                    evals = eigenvalues[band_ind]
+                    pvals = projected_data[band_ind]
+
+                for kpoint_ind in range(nkpts):
+                    projection_values = pvals[kpoint_ind]
+                    proj_str = "  ".join(
+                        [f"{val:.3f}" for val in projection_values]
+                    )
+
+                    if include_tot:
+                        tot_val = np.sum(projection_values)
+                        out_file.write(
+                            f"{kvals[kpoint_ind]:10.{precision}f}    "
+                            f"{evals[kpoint_ind]:12.{precision}f}  "
+                            f"{proj_str}  {tot_val:.3f}\n"
+                        )
+                    else:
+                        out_file.write(
+                            f"{kvals[kpoint_ind]:10.{precision}f}    "
+                            f"{evals[kpoint_ind]:12.{precision}f}  "
+                            f"{proj_str}\n"
+                        )
+
+                out_file.write("\n")
 
     def _sum_orbitals(self, orbitals):
         """
@@ -915,7 +1294,7 @@ class Band:
 
         return kdists
 
-    def _get_kticks(self, ax, wave_vectors, vlinecolor):
+    def _get_kticks(self, ax, wave_vectors, vlinecolor, linestyle="--", line_width=0.5):
         """
         This function extracts the kpoint labels and index locations for a regular
         band structure calculation (non unfolded).
@@ -989,13 +1368,13 @@ class Band:
 
         for k in kpoints_index:
             ax.axvline(
-                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=0.5
+                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=line_width, linestyle=linestyle
             )
 
         ax.set_xticks([wave_vectors[k] for k in kpoints_index])
         ax.set_xticklabels(labels)
 
-    def _get_kticks_hse(self, wave_vectors, ax, kpath, vlinecolor):
+    def _get_kticks_hse(self, wave_vectors, ax, kpath, vlinecolor, linestyle="--", line_width=0.5):
         structure = self.poscar.structure
         kpath_obj = HighSymmKpath(structure)
         kpath_labels = np.array(list(kpath_obj._kpath["kpoints"].keys()))
@@ -1086,12 +1465,12 @@ class Band:
 
         for k in kpoints_index:
             ax.axvline(
-                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=0.5
+                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=line_width, linestyle=linestyle
             )
 
         ax.set_xticks([wave_vectors[k] for k in kpoints_index], kpath)
 
-    def _get_kticks_unfold(self, ax, wave_vectors, vlinecolor):
+    def _get_kticks_unfold(self, ax, wave_vectors, vlinecolor, linestyle="--", line_width=0.5):
         if self.custom_kpath is not None:
             kpath = []
             for i, b in zip(self.custom_kpath_inds, self.custom_kpath_flip):
@@ -1138,7 +1517,7 @@ class Band:
 
         for k in kpoints_index:
             ax.axvline(
-                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=0.5
+                x=wave_vectors[k], color=vlinecolor, alpha=0.7, linewidth=line_width, linestyle=linestyle
             )
 
         ax.set_xticks(wave_vectors[kpoints_index])
@@ -1529,6 +1908,8 @@ class Band:
         band_index=None,
         sp_color="red",
         sp_scale_factor=5,
+        kline_style="--",
+        kline_width=1,
     ):
         """
         This function plots a plain band structure.
@@ -1628,10 +2009,15 @@ class Band:
 
             if self.soc_axis is not None and self.lsorbit:
                 #  spin_cmap = self._alpha_cmap(color=spin_projection_color, repeats=1)
+                if spin_projections.ndim == 3:
+                    spin_projections_to_plot = np.sum(spin_projections, axis=2)
+                else:
+                    spin_projections_to_plot = np.abs(spin_projections)
+
                 spin_projections_ravel = np.ravel(
                     np.c_[
-                        spin_projections,
-                        np.empty(spin_projections.shape[0]) * np.nan,
+                        spin_projections_to_plot,
+                        np.empty(spin_projections_to_plot.shape[0]) * np.nan,
                     ]
                 )
                 #  spin_colors = [spin_cmap(s) for s in spin_projections_ravel]
@@ -1811,18 +2197,24 @@ class Band:
                 wave_vectors=np.concatenate(self._get_k_distance()),
                 kpath=self.kpath,
                 vlinecolor=vlinecolor,
+                linestyle=kline_style,
+                line_width=kline_width,
             )
         elif self.unfold:
             self._get_kticks_unfold(
                 ax=ax,
                 wave_vectors=np.concatenate(self._get_k_distance()),
                 vlinecolor=vlinecolor,
+                linestyle=kline_style,
+                line_width=kline_width,
             )
         else:
             self._get_kticks(
                 ax=ax,
                 wave_vectors=np.concatenate(self._get_k_distance()),
                 vlinecolor=vlinecolor,
+                linestyle=kline_style,
+                line_width=kline_width,
             )
 
         ax.set_xlim(0, np.concatenate(self._get_k_distance()).max())
@@ -1835,7 +2227,7 @@ class Band:
         scale_factor=5,
         erange=[-6, 6],
         display_order=None,
-        linewidth=0.75,
+        linewidth=1,
         band_color="black",
         heatmap=False,
         bins=400,
@@ -1845,6 +2237,8 @@ class Band:
         powernorm=False,
         gamma=0.5,
         plain_scale_factor=10,
+        kline_style="--",
+        kline_width=1,
     ):
         """
         This is a general method for plotting projected data
@@ -1884,6 +2278,8 @@ class Band:
             projection=projected_data,
             scale_factor=plain_scale_factor,
             sp_scale_factor=0,
+            kline_style=kline_style,
+            kline_width=kline_width,
         )
 
         wave_vector_segments = self._get_k_distance()
@@ -2018,6 +2414,262 @@ class Band:
                     s=s,
                     zorder=100,
                 )
+
+    def _plot_projected_general_new(
+        self,
+        ax,
+        projected_data,
+        colors,
+        scale_factor=5,
+        erange=[-6, 6],
+        display_order=None,
+        linewidth=1,
+        band_color="black",
+        heatmap=False,
+        bins=400,
+        sigma=3,
+        cmap="hot",
+        vlinecolor="black",
+        powernorm=False,
+        gamma=0.5,
+        plain_scale_factor=10,
+        scatter_mode="flattened",
+        kline_style="--",
+        kline_width=1,
+        projection_scale_factors=None,
+    ):
+        """
+        This is a new projected-data plotting method that preserves the
+        original behavior while adding a layered scatter mode.
+
+        Parameters:
+            scatter_mode (str): 'flattened' uses original one-pass flattening;
+                'layered' draws each projection channel in a loop so later
+                channels overlay earlier ones.
+        """
+        if self.unfold:
+            if band_color == "black":
+                band_color = "darkgrey"
+            scale_factor = scale_factor * 4
+
+        if scatter_mode not in ["flattened", "layered"]:
+            raise ValueError(
+                "scatter_mode must be either 'flattened' or 'layered'"
+            )
+
+        if projection_scale_factors is not None:
+            projection_scale_factors = np.array(
+                projection_scale_factors, dtype=float
+            )
+            if projection_scale_factors.ndim != 1:
+                raise ValueError(
+                    "projection_scale_factors must be a 1D list/array"
+                )
+            if len(projection_scale_factors) != projected_data.shape[-1]:
+                raise ValueError(
+                    "projection_scale_factors length must match the number "
+                    "of projections"
+                )
+
+        bands_in_plot = self._filter_bands(erange=erange)
+        slices = self._get_slices(unfold=self.unfold, hse=self.hse)
+
+        if self.unfold:
+            K_indices = np.array(self.K_indices[0], dtype=int)
+            projected_data = projected_data[:, K_indices, :]
+
+        self.plot_plain(
+            ax=ax,
+            linewidth=linewidth,
+            color=band_color,
+            erange=erange,
+            heatmap=heatmap,
+            sigma=sigma,
+            cmap=cmap,
+            bins=bins,
+            vlinecolor=vlinecolor,
+            projection=projected_data,
+            scale_factor=plain_scale_factor,
+            sp_scale_factor=0,
+        )
+
+        wave_vector_segments = self._get_k_distance()
+
+        if self.custom_kpath is not None:
+            kpath_inds = self.custom_kpath_inds
+            kpath_flip = self.custom_kpath_flip
+        else:
+            kpath_inds = range(len(slices))
+            kpath_flip = [False for _ in range(len(slices))]
+
+        for i, f, wave_vectors in zip(
+            kpath_inds, kpath_flip, wave_vector_segments
+        ):
+            projected_data_slice = projected_data[bands_in_plot, slices[i]]
+            if f:
+                eigenvalues = np.flip(
+                    self.eigenvalues[bands_in_plot, slices[i]], axis=1
+                )
+                projected_data_slice = np.flip(projected_data_slice, axis=1)
+            else:
+                eigenvalues = self.eigenvalues[bands_in_plot, slices[i]]
+
+            unique_colors = np.unique(colors)
+            shapes = (
+                projected_data_slice.shape[0],
+                projected_data_slice.shape[1],
+                projected_data_slice.shape[-1],
+            )
+            projected_data_slice = projected_data_slice.reshape(shapes)
+
+            if projection_scale_factors is not None:
+                projected_data_slice = projected_data_slice * projection_scale_factors[
+                    np.newaxis, np.newaxis, :
+                ]
+
+            if len(unique_colors) == len(colors):
+                plot_colors = colors
+            else:
+                unique_inds = [np.isin(colors, c) for c in unique_colors]
+                projected_data_slice = np.squeeze(projected_data_slice)
+                projected_data_slice = np.c_[
+                    [
+                        np.sum(projected_data_slice[..., u], axis=2)
+                        for u in unique_inds
+                    ]
+                ].transpose((1, 2, 0))
+                plot_colors = unique_colors
+
+            wave_vectors_old = wave_vectors
+
+            if self.interpolate:
+                (
+                    wave_vectors,
+                    eigenvalues,
+                ) = self._get_interpolated_data_segment(
+                    wave_vectors_old, eigenvalues
+                )
+                _, projected_data_slice = self._get_interpolated_data_segment(
+                    wave_vectors_old,
+                    projected_data_slice,
+                    crop_zero=True,
+                    kind="linear",
+                )
+
+            if not heatmap:
+                if self.unfold:
+                    spectral_weights = self.spectral_weights[
+                        bands_in_plot, slices[i]
+                    ]
+                    if f:
+                        spectral_weights = np.flip(spectral_weights, axis=1)
+
+                    if self.interpolate:
+                        (
+                            _,
+                            spectral_weights,
+                        ) = self._get_interpolated_data_segment(
+                            wave_vectors_old,
+                            spectral_weights,
+                            crop_zero=True,
+                            kind="linear",
+                        )
+
+                if scatter_mode == "flattened":
+                    if self.unfold:
+                        spectral_weights_ravel = np.repeat(
+                            np.ravel(spectral_weights),
+                            projected_data_slice.shape[-1],
+                        )
+
+                    projected_data_ravel = np.ravel(projected_data_slice)
+                    wave_vectors_tile = np.tile(
+                        np.repeat(wave_vectors, projected_data_slice.shape[-1]),
+                        projected_data_slice.shape[0],
+                    )
+                    eigenvalues_tile = np.repeat(
+                        np.ravel(eigenvalues), projected_data_slice.shape[-1]
+                    )
+                    colors_tile = np.tile(
+                        plot_colors, np.prod(projected_data_slice.shape[:-1])
+                    )
+
+                    if display_order is None:
+                        pass
+                    else:
+                        sort_index = np.argsort(projected_data_ravel)
+
+                        if display_order == "all":
+                            sort_index = sort_index[::-1]
+
+                        wave_vectors_tile = wave_vectors_tile[sort_index]
+                        eigenvalues_tile = eigenvalues_tile[sort_index]
+                        colors_tile = colors_tile[sort_index]
+                        projected_data_ravel = projected_data_ravel[sort_index]
+
+                        if self.unfold:
+                            spectral_weights_ravel = spectral_weights_ravel[
+                                sort_index
+                            ]
+
+                    if self.unfold:
+                        s = (
+                            scale_factor
+                            * projected_data_ravel
+                            * spectral_weights_ravel
+                        )
+                    else:
+                        s = scale_factor * projected_data_ravel
+
+                    ax.scatter(
+                        wave_vectors_tile,
+                        eigenvalues_tile,
+                        c=colors_tile,
+                        ec=[(1, 1, 1, 0)],
+                        s=s,
+                        zorder=100,
+                    )
+                else:
+                    wave_vectors_points = np.tile(
+                        wave_vectors, (projected_data_slice.shape[0], 1)
+                    )
+                    eigenvalues_points = np.array(eigenvalues)
+
+                    for projection_ind, projection_color in enumerate(plot_colors):
+                        projection_weights = projected_data_slice[
+                            :, :, projection_ind
+                        ]
+
+                        wave_vectors_tile = np.ravel(wave_vectors_points)
+                        eigenvalues_tile = np.ravel(eigenvalues_points)
+                        projection_weights_ravel = np.ravel(projection_weights)
+
+                        if self.unfold:
+                            s = (
+                                scale_factor
+                                * projection_weights_ravel
+                                * np.ravel(spectral_weights)
+                            )
+                        else:
+                            s = scale_factor * projection_weights_ravel
+
+                        if display_order is not None:
+                            sort_index = np.argsort(projection_weights_ravel)
+                            if display_order == "all":
+                                sort_index = sort_index[::-1]
+
+                            wave_vectors_tile = wave_vectors_tile[sort_index]
+                            eigenvalues_tile = eigenvalues_tile[sort_index]
+                            s = s[sort_index]
+
+                        ax.scatter(
+                            wave_vectors_tile,
+                            eigenvalues_tile,
+                            c=projection_color,
+                            ec=[(1, 1, 1, 0)],
+                            s=s,
+                            zorder=100,
+                        )
 
     def plot_plain_old(
         self,
@@ -2748,6 +3400,98 @@ class Band:
                     for i in zip(atom_indices, orbital_symbols_long)
                 ],
                 colors=colors,
+            )
+
+
+    def plot_mixed_projections(
+        self,
+        ax,
+        projection_spec,
+        scale_factor=5,
+        erange=[-6, 6],
+        display_order=None,
+        color_list=None,
+        legend=True,
+        legend_fontsize=None,
+        linewidth=1,
+        band_color="black",
+        heatmap=False,
+        bins=400,
+        sigma=3,
+        cmap="hot",
+        vlinecolor="black",
+        powernorm=False,
+        gamma=0.5,
+        scatter_mode="layered",
+        kline_style="--",
+        kline_width=1,
+        projection_scale_factors=None,
+    ):
+        """
+        This function plots generalized mixed projections.
+
+        Parameters:
+            ax (matplotlib.pyplot.axis): Axis to plot the data on.
+            projection_spec (dict / list / tuple): Mixed projection specification.
+        """
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+
+        if color_list is None:
+            colors = np.array(
+                [
+                    self.color_dict[i % len(self.color_dict)]
+                    for i in range(len(labels))
+                ]
+            )
+        else:
+            colors = color_list
+
+        self._plot_projected_general_new(
+            ax=ax,
+            projected_data=projected_data,
+            colors=colors,
+            scale_factor=scale_factor,
+            erange=erange,
+            display_order=display_order,
+            linewidth=linewidth,
+            band_color=band_color,
+            heatmap=heatmap,
+            bins=bins,
+            sigma=sigma,
+            cmap=cmap,
+            vlinecolor=vlinecolor,
+            scatter_mode=scatter_mode,
+            kline_style=kline_style,
+            kline_width=kline_width,
+            projection_scale_factors=projection_scale_factors,
+        )
+
+        if legend:
+            if legend_fontsize is None:
+                tick_sizes = []
+                tick_sizes.extend(
+                    [tick.get_fontsize() for tick in ax.get_xticklabels()]
+                )
+                tick_sizes.extend(
+                    [tick.get_fontsize() for tick in ax.get_yticklabels()]
+                )
+
+                tick_sizes = [size for size in tick_sizes if size is not None]
+                if len(tick_sizes) > 0:
+                    legend_fontsize_final = max(min(tick_sizes) - 2, 1)
+                else:
+                    legend_fontsize_final = 10
+            else:
+                legend_fontsize_final = legend_fontsize
+
+            self._add_legend(
+                ax=ax,
+                names=labels,
+                colors=colors,
+                fontsize=legend_fontsize_final,
             )
 
     def plot_elements(

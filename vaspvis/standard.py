@@ -17,12 +17,12 @@ import time
 def _figure_setup(ax, fontsize=6, ylim=[-6, 6]):
     ax.set_ylabel("$E - E_{F}$ $(eV)$", fontsize=fontsize)
     ax.set_ylim(ylim[0], ylim[1])
-    ax.tick_params(labelsize=fontsize, length=2.5)
+    ax.tick_params(labelsize=fontsize, length=2.5, direction="in")
     ax.tick_params(axis="x", length=0)
 
 
 def _figure_setup_dos(ax, fontsize=6, energyaxis="y", log_scale=False):
-    ax.tick_params(labelsize=fontsize, length=2.5)
+    ax.tick_params(labelsize=fontsize, length=2.5, direction="in")
     if energyaxis == "y":
         ax.set_ylabel("$E - E_{F}$ $(eV)$", fontsize=fontsize)
         if log_scale:
@@ -112,6 +112,8 @@ def band_plain(
     sigma=2,
     cmap="hot",
     vlinecolor="black",
+    kline_style="--",
+    kline_width=0.5,
     cbar=True,
     cbar_orientation="horizontal",
     powernorm=True,
@@ -235,6 +237,8 @@ def band_plain(
         sigma=sigma,
         cmap=cmap,
         vlinecolor=vlinecolor,
+        kline_style=kline_style,
+        kline_width=kline_width,
         powernorm=powernorm,
         gamma=gamma,
         highlight_band=highlight_band,
@@ -811,6 +815,340 @@ def band_orbitals(
     else:
         return fig, ax
 
+
+
+def band_mixed_projections(
+    folder,
+    projection_spec,
+    output="band_mixed_projections.png",
+    spin="up",
+    scale_factor=5,
+    projection_scale_factors=None,
+    display_order=None,
+    color_list=None,
+    legend=True,
+    legend_fontsize=None,
+    linewidth=1,
+    band_color="black",
+    figsize=(4, 3),
+    erange=[-6, 6],
+    kpath=None,
+    custom_kpath=None,
+    stretch_factor=1.0,
+    n=None,
+    unfold=False,
+    M=None,
+    high_symm_points=None,
+    fontsize=12,
+    heatmap=False,
+    bins=800,
+    sigma=2,
+    cmap="hot",
+    vlinecolor="black",
+    kline_style="--",
+    kline_width=1,
+    cbar=True,
+    cbar_orientation="horizontal",
+    powernorm=True,
+    gamma=0.5,
+    scatter_mode="layered",
+    format_gamma_xticks=True,
+    xtick_fontsize=None,
+    xtick_fontname=None,
+    xtick_rotation=0,
+    tick_params_kwargs=None,
+    ytick_direction="in",
+    ytick_length=4,
+    tick_label_pad=None,
+    spine_linewidth=1,
+    draw_horizontal_fermi=True,
+    horizontal_fermi_kwargs=None,
+    draw_vertical_kgrid=False,
+    vertical_kgrid_kwargs=None,
+    set_xlim_from_xticks=True,
+    xlim=None,
+    trim_xticks_to_xlim=True,
+    ytick_step=None,
+    ytick_decimals=None,
+    ytick_fontsize=None,
+    ytick_fontname=None,
+    box_aspect=None,
+    export_data=False,
+    data_output="PBAND_mixed.dat",
+    snake_kpoints=True,
+    use_vaspkit_kpath=False,
+    include_tot=True,
+    data_precision=6,
+    save=True,
+    shift_efermi=0,
+    interpolate=False,
+    new_n=200,
+    soc_axis=None,
+):
+    """
+    This function generates a projected band structure with mixed atom and
+    orbital selectors.
+
+    projection_spec examples:
+
+    dict style:
+        {
+            "As": ["p"],
+            "In": [3, "pz"],
+            "As|In": ["d"],
+            "all": ["px|py", "d"],
+        }
+
+    list style:
+        [
+            ("As", "p"),
+            ("In", 3),
+            ("In", "pz"),
+            ("As|In", "d"),
+            ("all", "px|py"),
+            ("all", "d"),
+        ]
+
+    projection_scale_factors:
+        Optional list/array of per-projection multipliers. Length must
+        match the number of projection channels.
+    """
+
+    band = Band(
+        folder=folder,
+        spin=spin,
+        projected=True,
+        unfold=unfold,
+        high_symm_points=high_symm_points,
+        interpolate=interpolate,
+        new_n=new_n,
+        soc_axis=soc_axis,
+        kpath=kpath,
+        custom_kpath=custom_kpath,
+        stretch_factor=stretch_factor,
+        n=n,
+        M=M,
+        shift_efermi=shift_efermi,
+    )
+
+    if heatmap:
+        legend = False
+        if cbar:
+            if cbar_orientation == "horizontal":
+                fig, (ax, cax) = plt.subplots(
+                    nrows=2,
+                    figsize=figsize,
+                    gridspec_kw={"height_ratios": [1, 0.05]},
+                    dpi=400,
+                    constrained_layout=True,
+                )
+            elif cbar_orientation == "vertical":
+                fig, (ax, cax) = plt.subplots(
+                    ncols=2,
+                    figsize=figsize,
+                    gridspec_kw={"width_ratios": [1, 0.05]},
+                    dpi=400,
+                    constrained_layout=True,
+                )
+            else:
+                raise ValueError(
+                    "cbar_orientation must be 'horizontal' or 'vertical'"
+                )
+        else:
+            fig = plt.figure(figsize=figsize, dpi=400)
+            ax = fig.add_subplot(111)
+    else:
+        fig = plt.figure(figsize=figsize, dpi=400)
+        ax = fig.add_subplot(111)
+
+    _figure_setup(ax=ax, fontsize=fontsize, ylim=[erange[0], erange[1]])
+
+    band.plot_mixed_projections(
+        ax=ax,
+        projection_spec=projection_spec,
+        scale_factor=scale_factor,
+        projection_scale_factors=projection_scale_factors,
+        erange=erange,
+        display_order=display_order,
+        color_list=color_list,
+        legend=legend,
+        legend_fontsize=legend_fontsize,
+        linewidth=linewidth,
+        band_color=band_color,
+        heatmap=heatmap,
+        bins=bins,
+        sigma=sigma,
+        cmap=cmap,
+        vlinecolor=vlinecolor,
+        kline_style=kline_style,
+        kline_width=kline_width,
+        powernorm=powernorm,
+        gamma=gamma,
+        scatter_mode=scatter_mode,
+    )
+
+    if heatmap and cbar:
+        im = ax.collections[0]
+        min_val = im.norm.vmin
+        max_val = im.norm.vmax
+        cbar = fig.colorbar(im, cax=cax, orientation=cbar_orientation)
+        cbar.set_ticks([min_val, max_val])
+        cbar.set_ticklabels(["min", "max"])
+
+
+    if format_gamma_xticks:
+        xticks = ax.get_xticks()
+        xticklabels = [tick.get_text() for tick in ax.get_xticklabels()]
+
+        formatted_labels = []
+        for label in xticklabels:
+            label_clean = label.replace("$", "")
+            if label_clean.upper() in ["G", "GAMMA"]:
+                formatted_labels.append(r"$\Gamma$")
+            else:
+                formatted_labels.append(label_clean)
+
+        xtick_kwargs = {}
+        if xtick_fontsize is not None:
+            xtick_kwargs["fontsize"] = xtick_fontsize
+        if xtick_fontname is not None:
+            xtick_kwargs["fontname"] = xtick_fontname
+
+        ax.set_xticks(xticks)
+        ax.set_xticklabels(
+            formatted_labels,
+            rotation=xtick_rotation,
+            **xtick_kwargs,
+        )
+
+    ax.tick_params(axis="y", direction=ytick_direction, length=ytick_length)
+
+    if tick_params_kwargs is not None:
+        ax.tick_params(**tick_params_kwargs)
+
+    if tick_label_pad is not None:
+        ax.tick_params(pad=tick_label_pad)
+
+    if spine_linewidth is not None:
+        for spine in ax.spines.values():
+            spine.set_linewidth(spine_linewidth)
+
+    if draw_horizontal_fermi:
+        if horizontal_fermi_kwargs is None:
+            horizontal_fermi_kwargs = {
+                "linestyle": "--",
+                "linewidth": 1,
+                "color": "0.5",
+            }
+        ax.axhline(y=0, **horizontal_fermi_kwargs)
+
+    if draw_vertical_kgrid:
+        if vertical_kgrid_kwargs is None:
+            vertical_kgrid_kwargs = {
+                "linestyle": "--",
+                "linewidth": 1,
+                "color": "0.5",
+            }
+        xticks = ax.get_xticks()
+        for xval in xticks[1:-1]:
+            ax.axvline(x=xval, **vertical_kgrid_kwargs)
+
+    if xlim is not None:
+        ax.set_xlim(xlim)
+    elif set_xlim_from_xticks:
+        xticks = ax.get_xticks()
+        if len(xticks) > 1:
+            ax.set_xlim((xticks[0], xticks[-1]))
+
+    if trim_xticks_to_xlim:
+        xmin, xmax = ax.get_xlim()
+        xticks_old = ax.get_xticks()
+        xticklabels_old = [tick.get_text() for tick in ax.get_xticklabels()]
+
+        keep_inds = [
+            i for i, tick in enumerate(xticks_old)
+            if xmin - 1e-8 <= tick <= xmax + 1e-8
+        ]
+        xticks_new = [xticks_old[i] for i in keep_inds]
+        xlabels_new = [xticklabels_old[i] for i in keep_inds]
+
+        def _select_boundary_label(label_text, keep="left"):
+            cleaned = label_text.replace("$|$", "|")
+            if "|" not in cleaned:
+                return label_text
+
+            parts = cleaned.split("|")
+            selected = parts[0] if keep == "left" else parts[-1]
+            selected = selected.strip().strip("$")
+
+            if selected == "":
+                return label_text
+
+            if selected in ["\\Gamma", "Gamma", "GAMMA", "G"]:
+                return r"$\Gamma$"
+
+            return selected
+
+        if len(xlabels_new) > 0 and "|" in xlabels_new[-1]:
+            xlabels_new[-1] = _select_boundary_label(
+                xlabels_new[-1], keep="left"
+            )
+
+        if len(xlabels_new) > 0 and "|" in xlabels_new[0]:
+            xlabels_new[0] = _select_boundary_label(
+                xlabels_new[0], keep="right"
+            )
+
+        ax.set_xticks(xticks_new)
+        ax.set_xticklabels(xlabels_new)
+
+    if ytick_step is not None:
+        yticks = np.arange(erange[0], erange[1] + ytick_step, ytick_step)
+
+        if ytick_decimals is None:
+            ytick_labels = [
+                str(int(yval)) if float(yval).is_integer() else f"{yval:g}"
+                for yval in yticks
+            ]
+        else:
+            if ytick_decimals < 0:
+                raise ValueError("ytick_decimals must be >= 0")
+            ytick_labels = [
+                f"{yval:.{ytick_decimals}f}" for yval in yticks
+            ]
+
+        ytick_kwargs = {}
+        if ytick_fontsize is not None:
+            ytick_kwargs["fontsize"] = ytick_fontsize
+        if ytick_fontname is not None:
+            ytick_kwargs["fontname"] = ytick_fontname
+
+        ax.set_yticks(yticks)
+        ax.set_yticklabels(ytick_labels, **ytick_kwargs)
+
+    if box_aspect is not None:
+        ax.set_box_aspect(box_aspect)
+
+    if heatmap:
+        if not cbar:
+            fig.tight_layout(pad=0.4)
+    else:
+        fig.tight_layout(pad=0.4)
+
+    if export_data:
+        band.export_mixed_projections_data(
+            projection_spec=projection_spec,
+            output=data_output,
+            use_vaspkit_kpath=use_vaspkit_kpath,
+            snake_kpoints=snake_kpoints,
+            include_tot=include_tot,
+            precision=data_precision,
+        )
+
+    if save:
+        plt.savefig(output)
+    else:
+        return fig, ax
 
 def band_atoms(
     folder,
@@ -3954,6 +4292,111 @@ def dos_spd(
         plt.savefig(output)
     else:
         return fig, ax
+
+
+def dos_mixed_projections(
+    folder,
+    projection_spec,
+    output="dos_mixed_projections.png",
+    fill=False,
+    alpha=0.3,
+    linewidth=1.5,
+    sigma=0.05,
+    energyaxis="y",
+    color_list=None,
+    legend=True,
+    total=True,
+    figsize=(4, 3),
+    erange=[-6, 6],
+    spin="up",
+    soc_axis=None,
+    combination_method="add",
+    sp_method="percentage",
+    efermi_folder=None,
+    fontsize=12,
+    save=True,
+    shift_efermi=0,
+    export_data=False,
+    data_output="PDOS_mixed.dat",
+    include_tot=True,
+    data_precision=5,
+    energy_data_precision=5,
+    compact_data_labels=True,
+    tick_direction="in",
+    xticks=None,
+    yticks=None,
+    xtick_step=None,
+    ytick_step=None,
+    tick_length=2.5,
+    tick_width=0.8,
+    spine_width=0.8,
+):
+    """
+    Plot mixed DOS projections with generalized atom/orbital selectors.
+    """
+
+    dos = Dos(
+        shift_efermi=shift_efermi,
+        folder=folder,
+        spin=spin,
+        soc_axis=soc_axis,
+        combination_method=combination_method,
+        sp_method=sp_method,
+        efermi_folder=efermi_folder,
+    )
+
+    fig = plt.figure(figsize=figsize, dpi=400)
+    ax = fig.add_subplot(111)
+    _figure_setup_dos(ax=ax, fontsize=fontsize, energyaxis=energyaxis)
+
+    dos.plot_mixed_projections(
+        ax=ax,
+        projection_spec=projection_spec,
+        fill=fill,
+        alpha=alpha,
+        linewidth=linewidth,
+        sigma=sigma,
+        energyaxis=energyaxis,
+        color_list=color_list,
+        legend=legend,
+        total=total,
+        erange=erange,
+    )
+
+    ax.tick_params(direction=tick_direction, length=tick_length, width=tick_width)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(spine_width)
+
+    if xticks is not None:
+        ax.set_xticks(xticks)
+    elif xtick_step is not None:
+        xlim = ax.get_xlim()
+        ax.set_xticks(np.arange(xlim[0], xlim[1] + xtick_step, xtick_step))
+
+    if yticks is not None:
+        ax.set_yticks(yticks)
+    elif ytick_step is not None:
+        ylim = ax.get_ylim()
+        ax.set_yticks(np.arange(ylim[0], ylim[1] + ytick_step, ytick_step))
+
+    plt.tight_layout(pad=0.4)
+
+    if export_data:
+        dos.export_mixed_projections_data(
+            projection_spec=projection_spec,
+            output=data_output,
+            include_tot=include_tot,
+            precision=data_precision,
+            energy_precision=energy_data_precision,
+            compact_labels=compact_data_labels,
+        )
+
+    if save:
+        plt.savefig(output)
+    else:
+        return fig, ax
+
 
 
 def dos_atom_orbitals(
