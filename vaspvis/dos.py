@@ -114,7 +114,25 @@ class Dos:
             check_for_POTCAR=False,
             read_velocities=False,
         )
-        self.forbitals = self._check_f_orb()
+
+        if "LSORBIT" in self.incar:
+            if self.incar["LSORBIT"]:
+                self.lsorbit = True
+            else:
+                self.lsorbit = False
+        else:
+            self.lsorbit = False
+
+        if "ISPIN" in self.incar:
+            if self.incar["ISPIN"] == 2:
+                self.ispin = True
+            else:
+                self.ispin = False
+        else:
+            self.ispin = False
+
+        self.spin_dict = {"up": Spin.up, "down": Spin.down}
+        self.forbitals = self._infer_forbitals_from_projected()
         self.color_dict = {
             0: "#FF0000",
             1: "#0000FF",
@@ -136,8 +154,8 @@ class Dos:
         self.orbital_labels = {
             0: "s",
             1: "p_{y}",
-            2: "p_{x}",
-            3: "p_{z}",
+            2: "p_{z}",
+            3: "p_{x}",
             4: "d_{xy}",
             5: "d_{yz}",
             6: "d_{z^{2}}",
@@ -157,24 +175,6 @@ class Dos:
             "d": 2,
             "f": 3,
         }
-
-        if "LSORBIT" in self.incar:
-            if self.incar["LSORBIT"]:
-                self.lsorbit = True
-            else:
-                self.lsorbit = False
-        else:
-            self.lsorbit = False
-
-        if "ISPIN" in self.incar:
-            if self.incar["ISPIN"] == 2:
-                self.ispin = True
-            else:
-                self.ispin = False
-        else:
-            self.ispin = False
-
-        self.spin_dict = {"up": Spin.up, "down": Spin.down}
 
         self.tdos_array = self._load_tdos()
 
@@ -305,6 +305,30 @@ class Dos:
 
         with open(os.path.join(self.folder, "DOSCAR"), "w") as x:
             x.write(new_doscar)
+
+    def _infer_forbitals_from_projected(self):
+        """Infer whether DOSCAR contains f-orbital channels from projected DOS columns."""
+
+        if not self.lorbit or "projected" not in self.doscar:
+            return self._check_f_orb()
+
+        projected_ncols = int(self.doscar["projected"].shape[-1])
+
+        if self.lsorbit:
+            factor = 4
+        elif self.ispin:
+            factor = 2
+        else:
+            factor = 1
+
+        n_orb = (projected_ncols - 1) / factor
+
+        if np.isclose(n_orb, 16):
+            return True
+        if np.isclose(n_orb, 9):
+            return False
+
+        return self._check_f_orb()
 
     def _load_tdos(self):
         """
@@ -583,6 +607,403 @@ class Dos:
             ]
 
         return spd_contributions
+
+    def _orbital_name_to_index(self):
+        """Map orbital names to DOS orbital indices."""
+
+        name_to_index = {
+            "s": 0,
+            "py": 1,
+            "p_y": 1,
+            "pz": 2,
+            "p_z": 2,
+            "px": 3,
+            "p_x": 3,
+            "dxy": 4,
+            "d_xy": 4,
+            "dyz": 5,
+            "d_yz": 5,
+            "dz2": 6,
+            "d_z2": 6,
+            "d_z^2": 6,
+            "dz^2": 6,
+            "dxz": 7,
+            "d_xz": 7,
+            "dx2-y2": 8,
+            "dx2y2": 8,
+            "d_x2-y2": 8,
+            "d_x2y2": 8,
+        }
+
+        if self.forbitals:
+            name_to_index.update(
+                {
+                    "fy3x2": 9,
+                    "fxyz": 10,
+                    "fyz2": 11,
+                    "fz3": 12,
+                    "fxz2": 13,
+                    "fzx3": 14,
+                    "fx3": 15,
+                }
+            )
+
+        return name_to_index
+
+    def _get_spd_masks(self):
+        """Return masks for grouped orbital selectors."""
+
+        if not self.forbitals:
+            masks = [np.zeros(9, dtype=bool) for _ in range(3)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+        else:
+            masks = [np.zeros(16, dtype=bool) for _ in range(4)]
+            masks[0][0] = True
+            masks[1][1:4] = True
+            masks[2][4:9] = True
+            masks[3][9:16] = True
+
+        return {
+            "s": masks[0],
+            "p": masks[1],
+            "d": masks[2],
+            **({"f": masks[3]} if self.forbitals else {}),
+        }
+
+    def _parse_orbital_selector(self, selector):
+        """Convert selector to boolean orbital mask."""
+
+        norb = 16 if self.forbitals else 9
+        mask = np.zeros(norb, dtype=bool)
+
+        spd_masks = self._get_spd_masks()
+        name_to_index = self._orbital_name_to_index()
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= norb:
+                    raise ValueError(
+                        f"Orbital index {item} out of range 0..{norb - 1}"
+                    )
+                mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip().lower()
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                if token in spd_masks:
+                    mask[:] |= spd_masks[token]
+                    return
+
+                if token.isdigit():
+                    add_one(int(token))
+                    return
+
+                if token in name_to_index:
+                    mask[name_to_index[token]] = True
+                    return
+
+                raise ValueError(f"Unsupported orbital selector: {item}")
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(
+                f"Unsupported orbital selector type: {type(item)}"
+            )
+
+        add_one(selector)
+        return mask
+
+    def _parse_atom_selector(self, selector):
+        """Convert selector to boolean atom mask."""
+
+        natom = self.pdos_array.shape[1]
+        atom_mask = np.zeros(natom, dtype=bool)
+
+        natoms = self.poscar.natoms
+        symbols = self.poscar.site_symbols
+        element_list = np.hstack(
+            [[symbols[i] for _ in range(natoms[i])] for i in range(len(symbols))]
+        )
+
+        def add_one(item):
+            if isinstance(item, (int, np.integer)):
+                if item < 0 or item >= natom:
+                    raise ValueError(
+                        f"Atom index {item} out of range 0..{natom - 1}"
+                    )
+                atom_mask[item] = True
+                return
+
+            if isinstance(item, str):
+                token = item.strip()
+
+                if token.lower() == "all":
+                    atom_mask[:] = True
+                    return
+
+                if "|" in token:
+                    for sub in token.split("|"):
+                        add_one(sub.strip())
+                    return
+
+                inds = np.where(element_list == token)[0]
+
+                if len(inds) == 0:
+                    token_norm = token.capitalize()
+                    inds = np.where(element_list == token_norm)[0]
+
+                if len(inds) == 0:
+                    available_elements = sorted(set(element_list.tolist()))
+                    raise ValueError(
+                        f"Element '{token}' not found in POSCAR. "
+                        f"Available elements: {', '.join(available_elements)}"
+                    )
+                atom_mask[inds] = True
+                return
+
+            if isinstance(item, (list, tuple, set)):
+                for sub in item:
+                    add_one(sub)
+                return
+
+            raise TypeError(f"Unsupported atom selector type: {type(item)}")
+
+        add_one(selector)
+        return atom_mask
+
+    def _normalize_mixed_projection_spec(self, projection_spec):
+        """Normalize spec to list[(atom_selector, orbital_selector)]."""
+
+        normalized = []
+
+        if isinstance(projection_spec, dict):
+            for atom_sel, orb_sel in projection_spec.items():
+                if isinstance(orb_sel, (list, tuple, set)):
+                    for item in orb_sel:
+                        normalized.append((atom_sel, item))
+                else:
+                    normalized.append((atom_sel, orb_sel))
+            return normalized
+
+        if isinstance(projection_spec, (list, tuple)):
+            for item in projection_spec:
+                if not (
+                    isinstance(item, (list, tuple)) and len(item) == 2
+                ):
+                    raise ValueError(
+                        "List-style projection_spec must contain pairs like ('As', 'p')"
+                    )
+                normalized.append((item[0], item[1]))
+            return normalized
+
+        raise TypeError("projection_spec must be dict or list of pairs")
+
+    def _format_orbital_selector_label(self, selector):
+        """Format selector text for legend labels and exports."""
+
+        if isinstance(selector, (int, np.integer)):
+            if selector not in self.orbital_labels:
+                raise ValueError(f"Unsupported orbital index for label: {selector}")
+            return self.orbital_labels[int(selector)]
+
+        if isinstance(selector, str):
+            token = selector.strip()
+            token_lower = token.lower()
+
+            if "|" in token:
+                return "|".join(
+                    [
+                        self._format_orbital_selector_label(part)
+                        for part in token.split("|")
+                    ]
+                )
+
+            if token_lower in ["s", "p", "d", "f"]:
+                return token_lower
+
+            orbital_map = self._orbital_name_to_index()
+            if token_lower in orbital_map:
+                return self.orbital_labels[orbital_map[token_lower]]
+
+            return token
+
+        if isinstance(selector, (list, tuple, set)):
+            return "|".join(
+                [self._format_orbital_selector_label(item) for item in selector]
+            )
+
+        raise TypeError(
+            f"Unsupported orbital selector type for label: {type(selector)}"
+        )
+
+    def _is_total_projection_selector(self, atom_sel, orb_sel):
+        """Whether selector requests TDOS instead of summed PDOS."""
+
+        atom_token = (
+            atom_sel.strip().lower()
+            if isinstance(atom_sel, str)
+            else None
+        )
+        orb_token = (
+            orb_sel.strip().lower()
+            if isinstance(orb_sel, str)
+            else None
+        )
+
+        return atom_token in {"total", "tdos"} or orb_token == "total"
+
+    def _sum_mixed_projections(self, projection_spec):
+        """Generalized DOS projection combiner for atom/orbital selectors."""
+
+        spec_list = self._normalize_mixed_projection_spec(projection_spec)
+
+        pieces = []
+        labels = []
+
+        if (
+            self.spin == "both"
+            and self.combination_method == "sub"
+            and self.sp_method == "percentage"
+        ):
+            pieces_up = []
+            pieces_down = []
+
+            for atom_sel, orb_sel in spec_list:
+                if self._is_total_projection_selector(atom_sel, orb_sel):
+                    tdos_up = self.doscar["total"][:, 1]
+                    if self.doscar["total"].shape[1] > 2:
+                        tdos_down = self.doscar["total"][:, 2]
+                    else:
+                        tdos_down = np.zeros_like(tdos_up)
+
+                    pieces_up.append(tdos_up)
+                    pieces_down.append(tdos_down)
+                    labels.append("Total(total)")
+                    continue
+
+                atom_mask = self._parse_atom_selector(atom_sel)
+                orb_mask = self._parse_orbital_selector(orb_sel)
+
+                atom_summed_up = np.sum(self.pdos_array[0][:, atom_mask, :], axis=1)
+                atom_summed_down = np.sum(self.pdos_array[1][:, atom_mask, :], axis=1)
+
+                one_piece_up = np.sum(atom_summed_up[:, orb_mask], axis=1)
+                one_piece_down = np.sum(atom_summed_down[:, orb_mask], axis=1)
+
+                pieces_up.append(one_piece_up)
+                pieces_down.append(one_piece_down)
+                orbital_label = self._format_orbital_selector_label(orb_sel)
+                labels.append(f"{atom_sel}({orbital_label})")
+
+            projected_data = np.array(
+                [
+                    np.transpose(np.array(pieces_up), axes=(1, 0)),
+                    np.transpose(np.array(pieces_down), axes=(1, 0)),
+                ]
+            )
+        else:
+            for atom_sel, orb_sel in spec_list:
+                if self._is_total_projection_selector(atom_sel, orb_sel):
+                    pieces.append(self.tdos_array[:, 1])
+                    labels.append("Total(total)")
+                    continue
+
+                atom_mask = self._parse_atom_selector(atom_sel)
+                orb_mask = self._parse_orbital_selector(orb_sel)
+
+                atom_summed = np.sum(self.pdos_array[:, atom_mask, :], axis=1)
+                one_piece = np.sum(atom_summed[:, orb_mask], axis=1)
+
+                pieces.append(one_piece)
+                orbital_label = self._format_orbital_selector_label(orb_sel)
+                labels.append(f"{atom_sel}({orbital_label})")
+
+            projected_data = np.transpose(np.array(pieces), axes=(1, 0))
+
+        return projected_data, labels
+
+    def export_mixed_projections_data(
+        self,
+        projection_spec,
+        output="PDOS_mixed.dat",
+        include_tot=True,
+        precision=5,
+        energy_precision=5,
+        compact_labels=True,
+    ):
+        """Export mixed DOS projection data to a text file."""
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+        spec_list = self._normalize_mixed_projection_spec(projection_spec)
+
+        clean_labels = []
+        atom_selectors = [str(atom_sel).strip() for atom_sel, _ in spec_list]
+        same_atom_selector = len(atom_selectors) > 0 and len(set(atom_selectors)) == 1
+
+        for (atom_sel, orb_sel), label in zip(spec_list, labels):
+            if compact_labels and same_atom_selector:
+                clean_label = self._format_orbital_selector_label(orb_sel)
+            else:
+                clean_label = str(label)
+
+            clean_label = (
+                clean_label.replace("$", "")
+                .replace("{", "")
+                .replace("}", "")
+                .replace(" ", "_")
+                .replace("\\", "")
+                .replace("_", "")
+            )
+            clean_labels.append(clean_label)
+
+        energies = self.tdos_array[:, 0]
+
+        if (
+            self.spin == "both"
+            and self.combination_method == "sub"
+            and self.sp_method == "percentage"
+        ):
+            projected_sum = (projected_data[0] - projected_data[1]) / (
+                projected_data[0] + projected_data[1]
+            )
+            projected_sum[np.isnan(projected_sum)] = 1e-9
+        else:
+            projected_sum = projected_data
+
+        col_width = max([12] + [len(c) + 2 for c in clean_labels] + [5])
+
+        with open(output, "w") as out_file:
+            header = f"# {'Energy':<{col_width}}"
+            for col in clean_labels:
+                header += f"{col:>{col_width}}"
+            if include_tot:
+                header += f"{'tot':>{col_width}}"
+            out_file.write(header + "\n")
+
+            for i in range(len(energies)):
+                projection_values = projected_sum[i]
+                row = f"{energies[i]:{col_width}.{energy_precision}f}"
+                for val in projection_values:
+                    row += f"{val:{col_width}.{precision}f}"
+
+                if include_tot:
+                    tot_val = np.sum(projection_values)
+                    row += f"{tot_val:{col_width}.{precision}f}"
+
+                out_file.write(row + "\n")
 
     def _sum_orbitals(self, orbitals):
         """
@@ -1673,6 +2094,55 @@ class Dos:
                 names=[self.orbital_labels[i] for i in orbitals],
                 colors=colors,
             )
+
+    def plot_mixed_projections(
+        self,
+        ax,
+        projection_spec,
+        fill=False,
+        alpha=0.3,
+        alpha_line=1.0,
+        linewidth=1.5,
+        sigma=0.05,
+        energyaxis="y",
+        color_list=None,
+        legend=True,
+        total=True,
+        erange=[-6, 6],
+    ):
+        """Plot generalized mixed DOS projections using atom/orbital selectors."""
+
+        projected_data, labels = self._sum_mixed_projections(
+            projection_spec=projection_spec
+        )
+
+        if color_list is None:
+            colors = np.array(
+                [
+                    self.color_dict[i % len(self.color_dict)]
+                    for i in range(len(labels))
+                ]
+            )
+        else:
+            colors = color_list
+
+        self._plot_projected_general(
+            ax=ax,
+            energy=self.tdos_array[:, 0],
+            projected_data=projected_data,
+            colors=colors,
+            sigma=sigma,
+            erange=erange,
+            linewidth=linewidth,
+            alpha_line=alpha_line,
+            alpha=alpha,
+            fill=fill,
+            energyaxis=energyaxis,
+            total=total,
+        )
+
+        if legend:
+            self._add_legend(ax=ax, names=labels, colors=colors)
 
     def plot_atoms(
         self,

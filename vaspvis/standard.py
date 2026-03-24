@@ -17,12 +17,12 @@ import time
 def _figure_setup(ax, fontsize=6, ylim=[-6, 6]):
     ax.set_ylabel("$E - E_{F}$ $(eV)$", fontsize=fontsize)
     ax.set_ylim(ylim[0], ylim[1])
-    ax.tick_params(labelsize=fontsize, length=2.5)
+    ax.tick_params(labelsize=fontsize, length=2.5, direction="in")
     ax.tick_params(axis="x", length=0)
 
 
 def _figure_setup_dos(ax, fontsize=6, energyaxis="y", log_scale=False):
-    ax.tick_params(labelsize=fontsize, length=2.5)
+    ax.tick_params(labelsize=fontsize, length=2.5, direction="in")
     if energyaxis == "y":
         ax.set_ylabel("$E - E_{F}$ $(eV)$", fontsize=fontsize)
         if log_scale:
@@ -4292,6 +4292,111 @@ def dos_spd(
         plt.savefig(output)
     else:
         return fig, ax
+
+
+def dos_mixed_projections(
+    folder,
+    projection_spec,
+    output="dos_mixed_projections.png",
+    fill=False,
+    alpha=0.3,
+    linewidth=1.5,
+    sigma=0.05,
+    energyaxis="y",
+    color_list=None,
+    legend=True,
+    total=True,
+    figsize=(4, 3),
+    erange=[-6, 6],
+    spin="up",
+    soc_axis=None,
+    combination_method="add",
+    sp_method="percentage",
+    efermi_folder=None,
+    fontsize=12,
+    save=True,
+    shift_efermi=0,
+    export_data=False,
+    data_output="PDOS_mixed.dat",
+    include_tot=True,
+    data_precision=5,
+    energy_data_precision=5,
+    compact_data_labels=True,
+    tick_direction="in",
+    xticks=None,
+    yticks=None,
+    xtick_step=None,
+    ytick_step=None,
+    tick_length=2.5,
+    tick_width=0.8,
+    spine_width=0.8,
+):
+    """
+    Plot mixed DOS projections with generalized atom/orbital selectors.
+    """
+
+    dos = Dos(
+        shift_efermi=shift_efermi,
+        folder=folder,
+        spin=spin,
+        soc_axis=soc_axis,
+        combination_method=combination_method,
+        sp_method=sp_method,
+        efermi_folder=efermi_folder,
+    )
+
+    fig = plt.figure(figsize=figsize, dpi=400)
+    ax = fig.add_subplot(111)
+    _figure_setup_dos(ax=ax, fontsize=fontsize, energyaxis=energyaxis)
+
+    dos.plot_mixed_projections(
+        ax=ax,
+        projection_spec=projection_spec,
+        fill=fill,
+        alpha=alpha,
+        linewidth=linewidth,
+        sigma=sigma,
+        energyaxis=energyaxis,
+        color_list=color_list,
+        legend=legend,
+        total=total,
+        erange=erange,
+    )
+
+    ax.tick_params(direction=tick_direction, length=tick_length, width=tick_width)
+
+    for spine in ax.spines.values():
+        spine.set_linewidth(spine_width)
+
+    if xticks is not None:
+        ax.set_xticks(xticks)
+    elif xtick_step is not None:
+        xlim = ax.get_xlim()
+        ax.set_xticks(np.arange(xlim[0], xlim[1] + xtick_step, xtick_step))
+
+    if yticks is not None:
+        ax.set_yticks(yticks)
+    elif ytick_step is not None:
+        ylim = ax.get_ylim()
+        ax.set_yticks(np.arange(ylim[0], ylim[1] + ytick_step, ytick_step))
+
+    plt.tight_layout(pad=0.4)
+
+    if export_data:
+        dos.export_mixed_projections_data(
+            projection_spec=projection_spec,
+            output=data_output,
+            include_tot=include_tot,
+            precision=data_precision,
+            energy_precision=energy_data_precision,
+            compact_labels=compact_data_labels,
+        )
+
+    if save:
+        plt.savefig(output)
+    else:
+        return fig, ax
+
 
 
 def dos_atom_orbitals(
