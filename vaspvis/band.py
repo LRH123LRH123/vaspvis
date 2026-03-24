@@ -2436,6 +2436,7 @@ class Band:
         scatter_mode="flattened",
         kline_style="--",
         kline_width=1,
+        projection_scale_factors=None,
     ):
         """
         This is a new projected-data plotting method that preserves the
@@ -2455,6 +2456,20 @@ class Band:
             raise ValueError(
                 "scatter_mode must be either 'flattened' or 'layered'"
             )
+
+        if projection_scale_factors is not None:
+            projection_scale_factors = np.array(
+                projection_scale_factors, dtype=float
+            )
+            if projection_scale_factors.ndim != 1:
+                raise ValueError(
+                    "projection_scale_factors must be a 1D list/array"
+                )
+            if len(projection_scale_factors) != projected_data.shape[-1]:
+                raise ValueError(
+                    "projection_scale_factors length must match the number "
+                    "of projections"
+                )
 
         bands_in_plot = self._filter_bands(erange=erange)
         slices = self._get_slices(unfold=self.unfold, hse=self.hse)
@@ -2506,6 +2521,11 @@ class Band:
                 projected_data_slice.shape[-1],
             )
             projected_data_slice = projected_data_slice.reshape(shapes)
+
+            if projection_scale_factors is not None:
+                projected_data_slice = projected_data_slice * projection_scale_factors[
+                    np.newaxis, np.newaxis, :
+                ]
 
             if len(unique_colors) == len(colors):
                 plot_colors = colors
@@ -3405,6 +3425,7 @@ class Band:
         scatter_mode="layered",
         kline_style="--",
         kline_width=1,
+        projection_scale_factors=None,
     ):
         """
         This function plots generalized mixed projections.
@@ -3445,6 +3466,7 @@ class Band:
             scatter_mode=scatter_mode,
             kline_style=kline_style,
             kline_width=kline_width,
+            projection_scale_factors=projection_scale_factors,
         )
 
         if legend:

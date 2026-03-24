@@ -823,6 +823,7 @@ def band_mixed_projections(
     output="band_mixed_projections.png",
     spin="up",
     scale_factor=5,
+    projection_scale_factors=None,
     display_order=None,
     color_list=None,
     legend=True,
@@ -907,6 +908,10 @@ def band_mixed_projections(
             ("all", "px|py"),
             ("all", "d"),
         ]
+
+    projection_scale_factors:
+        Optional list/array of per-projection multipliers. Length must
+        match the number of projection channels.
     """
 
     band = Band(
@@ -962,6 +967,7 @@ def band_mixed_projections(
         ax=ax,
         projection_spec=projection_spec,
         scale_factor=scale_factor,
+        projection_scale_factors=projection_scale_factors,
         erange=erange,
         display_order=display_order,
         color_list=color_list,
